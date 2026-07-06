@@ -154,8 +154,8 @@ export async function getDesktopAuthStatus(
 ): Promise<AuthStatus> {
   const readSavedToken = dependencies.readToken ?? readToken
   const verifyGitHubToken =
-    dependencies.verifyGitHubToken ??
-    (async (token: string) => {
+    dependencies.verifyGitHubToken
+    ?? (async (token: string) => {
       await getGitHubUser(token)
     })
   const getEnabledProviders =
@@ -181,8 +181,10 @@ export function configureDesktopProvider(
   input: ProviderAuthInput,
   dependencies: ProviderConfigDependencies = {},
 ): AuthResult {
-  const readProviderConfig = dependencies.getRawProviderConfig ?? getRawProviderConfig
-  const writeProviderConfig = dependencies.setProviderConfig ?? setProviderConfig
+  const readProviderConfig =
+    dependencies.getRawProviderConfig ?? getRawProviderConfig
+  const writeProviderConfig =
+    dependencies.setProviderConfig ?? setProviderConfig
   const getEnabledProviders =
     dependencies.getEnabledProviders ?? getEnabledDesktopProviders
 
@@ -238,6 +240,17 @@ export function configureDesktopProvider(
   }
 }
 
+export interface ConfigureProviderStatusDependencies
+  extends ProviderConfigDependencies, AuthStatusDependencies {}
+
+export async function configureProviderWithAuthStatus(
+  input: ProviderAuthInput,
+  dependencies: ConfigureProviderStatusDependencies = {},
+): Promise<AuthStatus> {
+  configureDesktopProvider(input, dependencies)
+  return getDesktopAuthStatus(dependencies)
+}
+
 export async function loginCodexForDesktop(
   options: CodexDesktopLoginOptions,
   dependencies: CodexDesktopLoginDependencies = {},
@@ -266,6 +279,8 @@ export async function loginCodexForDesktop(
   }
 }
 
-export function shouldStartInProviderMode(mode: DesktopAuthMode | undefined): boolean {
+export function shouldStartInProviderMode(
+  mode: DesktopAuthMode | undefined,
+): boolean {
   return mode === 'provider'
 }
