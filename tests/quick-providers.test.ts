@@ -20,4 +20,15 @@ describe("quick provider configs", () => {
       type: "openai-compatible",
     })
   })
+
+  test("uses OpenAI-compatible defaults for CloudGPT", () => {
+    expect(QUICK_PROVIDER_CONFIGS.cloudgpt).toEqual({
+      authType: "azure-cli",
+      baseUrl: "https://cloudgpt-openai.azure-api.net/openai",
+      editableType: true,
+      pricingCurrency: "USD",
+      requiresApiKey: false,
+      type: "openai-compatible",
+    })
+  })
 })

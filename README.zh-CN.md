@@ -9,7 +9,7 @@
 >
 > 1. **Claude Code 配置：** 与 Claude Code 搭配使用时，请将模型 ID 配置为 `claude-opus-4-8`。示例 claude `settings.json` 见 [通过 `settings.json` 手动配置](#manual-configuration-with-settingsjson)。
 >
-> 2. **内置 `copilot`、`codex` 与第三方 provider：** 执行 `npx @jeffreycao/copilot-api@latest auth`，可选择 `copilot`、`codex`、`deepseek`、`custom` 等 provider。
+> 2. **内置 `copilot`、`codex` 与第三方 provider：** 执行 `npx @jeffreycao/copilot-api@latest auth`，可选择 `copilot`、`codex`、`deepseek`、`cloudgpt`、`custom` 等 provider。
 >
 > 3. **注意事项：** README 顶部移除的 GitHub Copilot warning 见 [GitHub Copilot 安全提示](./NOTICE.md#github-copilot-security-notice)。
 
@@ -28,8 +28,8 @@ AI gateway 会从同一个本地端点暴露 OpenAI / Anthropic 兼容 API，让
 - **OpenAI 与 Anthropic 双兼容**：通过 `/v1/responses`、`/v1/chat/completions`、`/v1/models`、`/v1/embeddings` 和 `/v1/messages` 对外暴露同一个本地 AI gateway。
 - **Copilot 可选**：有 GitHub 凭据时可以使用 GitHub Copilot，没有 GitHub 凭据时也可以只依赖已配置的 provider 运行。
 - **同一网关接入 Copilot、`codex` 与第三方 provider**：可统一路由 GitHub Copilot、内置 `codex` provider 和配置好的外部 provider。
-- **第三方 provider 可独立启动**：配置 DashScope、DeepSeek、OpenRouter 或自定义 provider 后，不需要 GitHub Copilot 登录即可启动 AI gateway。
-- **OpenAI 兼容 provider 同时支持 chat 和 Messages API**：`openai-compatible` provider 可通过顶层 `/v1/chat/completions` 搭配 `model: "provider/model"` 提供 Chat Completions，也可通过 `/v1/messages` 完成 Anthropic Messages 的请求/响应翻译。
+- **第三方 provider 可独立启动**：配置 DashScope、DeepSeek、CloudGPT、OpenRouter 或自定义 provider 后，不需要 GitHub Copilot 登录即可启动 AI gateway。
+- **Provider 在 chat 与 Messages API 上的格式翻译**：`openai-compatible`、`openai-responses`（包括 `codex`）以及 Anthropic provider 都可通过顶层 `/v1/chat/completions` 搭配 `model: "provider/model"` 使用，并在需要时完成请求/响应格式翻译；Messages API 也可在 Anthropic 风格客户端与 OpenAI-compatible 或 Responses-capable provider 之间翻译。
 - **面向 Claude 的更原生 Copilot 路由**：优先使用原生 `/v1/messages`，保留 Claude 风格工具流，支持 Anthropic beta 能力、通过 Responses-capable 模型支持 Claude WebSearch，并保留 subagent / session 标记。
 - **Claude Code 与 OpenCode 集成**：兼容 Claude Code 与 OpenCode，也支持通过 `@ai-sdk/anthropic` 直接作为 Anthropic provider 使用。
 - **灵活的认证与部署选项**：支持交互式登录、直接 token、个人 / Business / Enterprise、GitHub Enterprise、opencode OAuth 和自定义数据目录。
@@ -40,7 +40,8 @@ AI gateway 会从同一个本地端点暴露 OpenAI / Anthropic 兼容 API，让
 - Bun（>= 1.2.x）
 - 如果要通过 `npx` 运行已发布 CLI，需要 Node.js
 - 只有在使用 GitHub Copilot provider 时，才需要已订阅 Copilot 的 GitHub 账号
-- 如果不使用 GitHub Copilot，需要至少一个已配置 provider 的 API key 或 OAuth 登录
+- 如果不使用 GitHub Copilot，需要至少一个已配置 provider 的 API key、OAuth 登录，或 CloudGPT Azure CLI 登录
+- 如果要使用 CloudGPT，请先让 Azure CLI 登录到 CloudGPT tenant：`az login --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47`
 
 ## 安装
 
@@ -129,7 +130,7 @@ docker run -p 4141:4141 -e GH_TOKEN=your_github_token_here copilot-api
 
 ## Electron 桌面应用
 
-如果你更喜欢图形界面，仓库里还提供了位于 `desktop/` 的 Electron 桌面应用。它支持 GitHub Copilot 登录、OpenAI Codex OAuth，以及 DeepSeek、DashScope、OpenRouter 或自定义 provider 的 API Key 配置。授权或配置 provider 后，可以一键启动或停止本地代理，并在界面里直接查看本地端点、鉴权 Header、可用模型、额度和日志。
+如果你更喜欢图形界面，仓库里还提供了位于 `desktop/` 的 Electron 桌面应用。它支持 GitHub Copilot 登录、OpenAI Codex OAuth，DeepSeek、DashScope、OpenRouter 或自定义 provider 的 API Key 配置，以及基于 Azure CLI 的 CloudGPT 配置。授权或配置 provider 后，可以一键启动或停止本地代理，并在界面里直接查看本地端点、鉴权 Header、可用模型、额度和日志。
 
 设置页还可以配置 `OAuth App`、`API Home`、`Enterprise URL`、详细日志以及最小化到托盘。桌面安装包发布在 GitHub Releases：
 
@@ -489,13 +490,19 @@ Copilot API 现在使用子命令结构，主要命令包括：
 
 | 选项 | 说明 | 默认值 | 别名 |
 | --- | --- | --- | --- |
-| --provider | 要登录或配置的 provider（`copilot`、`codex`、`opencode-go`、`deepseek`、`dashscope`、`openrouter` 或 `custom`） | 交互选择 | 无 |
+| --provider | 要登录或配置的 provider（`copilot`、`codex`、`opencode-go`、`deepseek`、`dashscope`、`cloudgpt`、`openrouter` 或 `custom`） | 交互选择 | 无 |
 | --verbose | 启用详细日志 | false | -v |
 | --show-token | 认证时显示 GitHub token | false | 无 |
 
 只有在需要启用 GitHub Copilot provider 时，才需要执行 `copilot-api auth login --provider copilot`。使用 `codex` 或第三方 provider-only 模式不要求配置 Copilot。
 
-使用 `copilot-api auth login --provider deepseek`、`--provider dashscope`、`--provider openrouter` 或 `--provider opencode-go` 可以通过 CLI 快速新增或更新这些常用第三方 provider。DeepSeek 会提示输入掩码显示的 `apiKey`、provider `type`（默认 `anthropic`），以及默认 `https://api.deepseek.com/anthropic` 的 `baseUrl`。DashScope 会提示输入掩码显示的 `apiKey`、provider `type`（默认 `openai-compatible`）和预填默认值的 `baseUrl`。OpenRouter 只提示输入掩码显示的 `apiKey` 和预填默认值的 `baseUrl`，并固定写入 `type: "anthropic"`。OpenCode Go 只提示输入掩码显示的 `apiKey` 和预填默认值的 `baseUrl`，并固定写入 `type: "openai-compatible"`（baseUrl `https://opencode.ai/zen/go`）。配置并启用 provider 后，`copilot-api start` 可在没有 GitHub token 的情况下启动。
+使用 `copilot-api auth login --provider deepseek`、`--provider dashscope`、`--provider cloudgpt`、`--provider openrouter` 或 `--provider opencode-go` 可以通过 CLI 快速新增或更新这些常用第三方 provider。DeepSeek 会提示输入掩码显示的 `apiKey`、provider `type`（默认 `anthropic`），以及默认 `https://api.deepseek.com/anthropic` 的 `baseUrl`。DashScope 会提示输入掩码显示的 `apiKey`、provider `type`（默认 `openai-compatible`）和预填默认值的 `baseUrl`。CloudGPT 会提示 provider `type`（默认 `openai-compatible`）和预填默认值的 `baseUrl`（`https://cloudgpt-openai.azure-api.net/openai`），并写入 `authType: "azure-cli"`，让代理从本机 Azure CLI 登录状态获取并刷新短期 AAD access token。使用 CloudGPT 前，请先执行 `az login --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47`。CloudGPT 的模型发现使用内置静态目录和内置 USD 价格默认值，因此 `/v1/models` 不依赖上游 CloudGPT 模型列表接口。OpenRouter 只提示输入掩码显示的 `apiKey` 和预填默认值的 `baseUrl`，并固定写入 `type: "anthropic"`。OpenCode Go 只提示输入掩码显示的 `apiKey` 和预填默认值的 `baseUrl`，并固定写入 `type: "openai-compatible"`（baseUrl `https://opencode.ai/zen/go`）。配置并启用 provider 后，`copilot-api start` 可在没有 GitHub token 的情况下启动。
+
+CloudGPT 配置不需要 API Key：
+
+1. 安装 Azure CLI，并执行 `az login --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47`。
+2. 执行 `copilot-api auth login --provider cloudgpt`，除非你的 CloudGPT endpoint 不同，否则保持默认 base URL 即可。
+3. 执行 `copilot-api start` 启动代理。代理会通过 Azure CLI 获取 CloudGPT access token，在内存中缓存，并在过期前刷新。
 
 使用 `copilot-api auth login --provider custom` 可以通过 CLI 新增或更新其他第三方 provider。命令会依次提示输入 provider name、项目支持的 type（`anthropic`、`openai-compatible` 或 `openai-responses`）、`baseUrl`、掩码显示的 `apiKey` 和 `authType`；`authType` 可保持 type 默认值，也可选择 `x-api-key` / `authorization`。
 
@@ -544,9 +551,9 @@ Copilot API 现在使用子命令结构，主要命令包括：
 - **providers：** 全局上游 provider 映射。每个 provider key（例如 `dashscope`）都会变成一个路由前缀（`/dashscope/v1/messages`）。支持 `type: "anthropic"`、`type: "openai-compatible"` 和 `type: "openai-responses"`。顶层客户端也可以在 `/v1/messages`、`/v1/messages/count_tokens`、`/v1/responses` 和 `/v1/chat/completions` 中使用 `model: "dashscope/model-id"`；AI gateway 会在转发上游前移除 `dashscope/` 前缀。`openai-compatible` provider 同时支持 chat 和 Messages 流程：`/v1/chat/completions` 会直连上游 `/v1/chat/completions`，而 `/v1/messages` 和 `/:provider/v1/messages` 会先翻译为上游 Chat Completions，再把响应翻译回 Anthropic Messages。`GET /v1/models` 会聚合已启用 provider 的模型，并以 `provider/model-id` 形式返回；单个 provider 的原始模型列表仍可使用 `GET /dashscope/v1/models`。
   - `enabled`：可选，若省略则默认为 `true`。
   - `baseUrl`：provider API 的基础 URL，不要带结尾的 endpoint。Anthropic provider 不要带 `/v1/messages`；OpenAI 兼容 provider 不要带 `/v1/chat/completions`；OpenAI Responses provider 不要带 `/v1/responses`。
-  - `apiKey`：作为上游凭据值使用；普通 provider 必须配置。
-  - `authType`：可选，控制 `apiKey` 如何发送到上游。普通 provider 支持 `x-api-key` 和 `authorization`。Anthropic provider 默认 `x-api-key`；OpenAI 兼容和 OpenAI Responses provider 默认 `authorization`。当设置为 `authorization` 时，代理会发送 `Authorization: Bearer <apiKey>`。`oauth2` 仅保留给内置 `codex` provider，并由 `auth login --provider codex` 自动写入。
-  - `pricingCurrency`：可选，provider 维度的 token 费用币种，例如 `USD` 或 `CNY`。快捷 provider 默认 DashScope、DeepSeek 为 `CNY`，Codex/OpenRouter 为 `USD`。费用按币种分别汇总，不做汇率换算。
+  - `apiKey`：作为上游凭据值使用；普通 provider 必须配置。CloudGPT 使用 `authType: "azure-cli"` 时不需要配置 `apiKey`。
+  - `authType`：可选，控制凭据如何发送到上游。普通 provider 支持 `x-api-key` 和 `authorization`。Anthropic provider 默认 `x-api-key`；OpenAI 兼容和 OpenAI Responses provider 默认 `authorization`。当设置为 `authorization` 时，代理会发送 `Authorization: Bearer <apiKey>`。`oauth2` 仅保留给内置 `codex` provider，并由 `auth login --provider codex` 自动写入。`azure-cli` 仅保留给内置 `cloudgpt` provider；代理会执行 `az account get-access-token --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47 --scope api://feb7b661-cac7-44a8-8dc1-163b63c23df2/.default -o json`，在内存中缓存返回的 access token，并在过期前刷新。
+  - `pricingCurrency`：可选，provider 维度的 token 费用币种，例如 `USD` 或 `CNY`。快捷 provider 默认 DashScope、DeepSeek 为 `CNY`，Codex/CloudGPT/OpenRouter 为 `USD`。费用按币种分别汇总，不做汇率换算。
   - `models`：可选，按模型 ID 配置的映射。每个键为请求中的模型名，值支持：
     - `temperature`：可选，当请求未指定时使用的默认温度。
     - `topP`：可选，当请求未指定时使用的默认 `top_p`。

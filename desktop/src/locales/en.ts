@@ -11,7 +11,10 @@ const en: Locale = {
     providerApiKey: 'API key',
     providerAuthType: 'Auth type',
     providerAuthTypeDefault: 'Default',
+    providerAzureCliAuth:
+      'Uses your local Azure CLI session; run az login --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47 before starting the proxy. No API key is stored.',
     providerBaseUrl: 'Base URL',
+    providerCloudgpt: 'CloudGPT',
     providerDashscope: 'DashScope',
     providerDeepseek: 'DeepSeek',
     providerInvalid: 'Invalid provider configuration, please try again',

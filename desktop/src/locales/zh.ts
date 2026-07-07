@@ -11,7 +11,10 @@ const zh: Locale = {
     providerApiKey: 'API Key',
     providerAuthType: '认证类型',
     providerAuthTypeDefault: '默认',
+    providerAzureCliAuth:
+      '使用本机 Azure CLI 登录状态；启动代理前请先执行 az login --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47。不会保存 API Key。',
     providerBaseUrl: 'Base URL',
+    providerCloudgpt: 'CloudGPT',
     providerDashscope: 'DashScope',
     providerDeepseek: 'DeepSeek',
     providerInvalid: 'Provider 配置无效，请重试',

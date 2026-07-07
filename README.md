@@ -9,7 +9,7 @@ English | [简体中文](./README.zh-CN.md)
 >
 > 1. **Claude Code configuration:** When using with Claude Code, please configure the model ID as `claude-opus-4-8`. Example claude `settings.json` see [Manual Configuration with `settings.json`](#manual-configuration-with-settingsjson). 
 >
-> 2. **Built-in `copilot`, `codex` and third-party providers:** Run `npx @jeffreycao/copilot-api@latest auth` and choose `copilot`, `codex`, `deepseek`, `custom`, or other providers.
+> 2. **Built-in `copilot`, `codex` and third-party providers:** Run `npx @jeffreycao/copilot-api@latest auth` and choose `copilot`, `codex`, `deepseek`, `cloudgpt`, `custom`, or other providers.
 >
 > 3. **Note:** See [GitHub Copilot Security Notice](./NOTICE.md#github-copilot-security-notice) for the warning removed from the README header.
 
@@ -28,8 +28,8 @@ On the GitHub Copilot path, the gateway prefers Copilot's native Anthropic-style
 - **OpenAI and Anthropic compatibility**: Serve `/v1/responses`, `/v1/chat/completions`, `/v1/models`, `/v1/embeddings`, and `/v1/messages` from one local gateway.
 - **Copilot is optional**: Use GitHub Copilot when credentials are present, or run the server with only configured providers.
 - **One gateway for Copilot, `codex`, and external providers**: Route GitHub Copilot, the built-in `codex` provider, and configured third-party providers behind the same endpoint.
-- **Standalone third-party providers**: Configure providers such as DashScope, DeepSeek, OpenRouter, or a custom provider and start the gateway without a GitHub Copilot login.
-- **OpenAI-compatible providers on chat and Messages APIs**: `openai-compatible` providers can serve top-level `/v1/chat/completions` through `model: "provider/model"` and Anthropic-style `/v1/messages` through request/response translation.
+- **Standalone third-party providers**: Configure providers such as DashScope, DeepSeek, CloudGPT, OpenRouter, or a custom provider and start the gateway without a GitHub Copilot login.
+- **Provider translation on chat and Messages APIs**: `openai-compatible`, `openai-responses` (including `codex`), and Anthropic providers can serve top-level `/v1/chat/completions` through `model: "provider/model"` with request/response translation where needed; Messages APIs also translate between Anthropic-style clients and OpenAI-compatible or Responses-capable providers.
 - **Agent-friendly Claude handling on Copilot**: Prefer native `/v1/messages` when available, preserve Claude-style tool flows, support Anthropic beta features, Claude WebSearch through Responses-capable models, and keep subagent/session markers intact.
 - **Claude Code and OpenCode integration**: Works with Claude Code and OpenCode, including direct Anthropic-compatible usage through `@ai-sdk/anthropic`.
 - **Flexible auth and deployment options**: Supports interactive login or direct tokens, individual/business/enterprise plans, GitHub Enterprise, opencode OAuth, and custom data directories.
@@ -40,7 +40,8 @@ On the GitHub Copilot path, the gateway prefers Copilot's native Anthropic-style
 - Bun (>= 1.2.x)
 - Node.js if you plan to run the published CLI with `npx`
 - GitHub account with Copilot subscription only if you want to use the GitHub Copilot provider
-- An API key or OAuth login for at least one configured provider if you want to run without GitHub Copilot
+- An API key, OAuth login, or CloudGPT Azure CLI login for at least one configured provider if you want to run without GitHub Copilot
+- Azure CLI logged into the CloudGPT tenant if you want to use CloudGPT: `az login --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47`
 
 ## Installation
 
@@ -129,7 +130,7 @@ docker run -p 4141:4141 -e GH_TOKEN=your_github_token_here copilot-api
 
 ## Electron Desktop App
 
-If you prefer a GUI, this repository also includes an Electron desktop app in `desktop/`. It supports GitHub Copilot sign-in, OpenAI Codex OAuth, and API-key configuration for DeepSeek, DashScope, OpenRouter, or a custom provider. After authorization or provider configuration, it can start and stop the local proxy with one click and shows the local endpoint, auth header, available models, usage, and logs in the app.
+If you prefer a GUI, this repository also includes an Electron desktop app in `desktop/`. It supports GitHub Copilot sign-in, OpenAI Codex OAuth, API-key configuration for DeepSeek, DashScope, OpenRouter, or a custom provider, and Azure CLI-based CloudGPT configuration. After authorization or provider configuration, it can start and stop the local proxy with one click and shows the local endpoint, auth header, available models, usage, and logs in the app.
 
 The settings screen also exposes `OAuth App`, `API Home`, `Enterprise URL`, verbose logging, and minimize-to-tray. Desktop packages are published in GitHub Releases:
 
@@ -485,13 +486,19 @@ The following command line options are available for the `start` command:
 
 | Option       | Description               | Default | Alias |
 | ------------ | ------------------------- | ------- | ----- |
-| --provider   | Provider to log in with or configure (`copilot`, `codex`, `opencode-go`, `deepseek`, `dashscope`, `openrouter`, or `custom`) | prompt | none |
+| --provider   | Provider to log in with or configure (`copilot`, `codex`, `opencode-go`, `deepseek`, `dashscope`, `cloudgpt`, `openrouter`, or `custom`) | prompt | none |
 | --verbose    | Enable verbose logging    | false   | -v    |
 | --show-token | Show GitHub token on auth | false   | none  |
 
 Use `copilot-api auth login --provider copilot` only when you want to enable the GitHub Copilot provider. Copilot is not required for `codex` or third-party provider-only usage.
 
-Use `copilot-api auth login --provider deepseek`, `--provider dashscope`, `--provider openrouter`, or `--provider opencode-go` to add or update those common third-party providers from the CLI. DeepSeek prompts for masked `apiKey`, provider `type` (default `anthropic`), and `baseUrl` defaulting to `https://api.deepseek.com/anthropic`. DashScope prompts for masked `apiKey`, provider `type` (default `openai-compatible`), and prefilled `baseUrl`. OpenRouter prompts for masked `apiKey` and prefilled `baseUrl` only, and writes `type: "anthropic"`. OpenCode Go prompts for masked `apiKey` and prefilled `baseUrl` only, and writes `type: "openai-compatible"` (baseUrl `https://opencode.ai/zen/go`). After a provider is configured and enabled, `copilot-api start` can run without any GitHub token.
+Use `copilot-api auth login --provider deepseek`, `--provider dashscope`, `--provider cloudgpt`, `--provider openrouter`, or `--provider opencode-go` to add or update those common third-party providers from the CLI. DeepSeek prompts for masked `apiKey`, provider `type` (default `anthropic`), and `baseUrl` defaulting to `https://api.deepseek.com/anthropic`. DashScope prompts for masked `apiKey`, provider `type` (default `openai-compatible`), and prefilled `baseUrl`. CloudGPT prompts for provider `type` (default `openai-compatible`) and prefilled `baseUrl` (`https://cloudgpt-openai.azure-api.net/openai`), then writes `authType: "azure-cli"` so the proxy obtains and refreshes short-lived AAD access tokens from your local Azure CLI session. Before using CloudGPT, run `az login --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47`. CloudGPT model discovery uses a built-in static catalog and built-in USD pricing defaults, so `/v1/models` does not depend on an upstream CloudGPT model-list endpoint. OpenRouter prompts for masked `apiKey` and prefilled `baseUrl` only, and writes `type: "anthropic"`. OpenCode Go prompts for masked `apiKey` and prefilled `baseUrl` only, and writes `type: "openai-compatible"` (baseUrl `https://opencode.ai/zen/go`). After a provider is configured and enabled, `copilot-api start` can run without any GitHub token.
+
+CloudGPT setup is API-keyless:
+
+1. Install Azure CLI and run `az login --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47`.
+2. Run `copilot-api auth login --provider cloudgpt` and keep the default base URL unless your CloudGPT endpoint differs.
+3. Start the proxy with `copilot-api start`. The proxy calls Azure CLI for CloudGPT access tokens, caches them in memory, and refreshes them before expiry.
 
 Use `copilot-api auth login --provider custom` to add or update another third-party provider from the CLI. The command prompts for the provider name, supported type (`anthropic`, `openai-compatible`, or `openai-responses`), `baseUrl`, masked `apiKey`, and `authType`; `authType` may be left as the type default or set to `x-api-key` / `authorization`.
 
@@ -538,9 +545,9 @@ Use `copilot-api auth login --provider custom` to add or update another third-pa
 - **providers:** Global upstream provider map. Each provider key (for example `dashscope`) becomes a route prefix (`/dashscope/v1/messages`). Supports `type: "anthropic"`, `type: "openai-compatible"`, and `type: "openai-responses"`. Top-level clients can also use `model: "dashscope/model-id"` with `/v1/messages`, `/v1/messages/count_tokens`, `/v1/responses`, and `/v1/chat/completions`; the gateway strips the `dashscope/` prefix before forwarding upstream. `openai-compatible` providers support both chat and Messages flows: `/v1/chat/completions` is proxied to upstream `/v1/chat/completions`, while `/v1/messages` and `/:provider/v1/messages` are translated to upstream chat completions and translated back to Anthropic Messages responses. `GET /v1/models` aggregates enabled provider models with `provider/model-id` IDs; use `GET /dashscope/v1/models` for a single provider's raw model list.
   - `enabled` defaults to `true` if omitted.
   - `baseUrl` should be provider API base URL without the final endpoint. For Anthropic providers, omit `/v1/messages`; for OpenAI-compatible providers, omit `/v1/chat/completions`; for OpenAI Responses providers, omit `/v1/responses`.
-  - `apiKey` is used as the upstream credential value and is required for regular providers.
-  - `authType` (optional): Controls how `apiKey` is sent upstream. Supports `x-api-key` and `authorization` for regular providers. Anthropic providers default to `x-api-key`; OpenAI-compatible and OpenAI Responses providers default to `authorization`. When set to `authorization`, the proxy sends `Authorization: Bearer <apiKey>`. `oauth2` is reserved for the built-in `codex` provider and is written automatically by `auth login --provider codex`.
-  - `pricingCurrency` (optional): Provider-level currency used for token cost calculation, for example `USD` or `CNY`. Quick providers default to `CNY` for DashScope and DeepSeek, and `USD` for Codex/OpenRouter. Costs are grouped by currency and are not exchange-rate converted.
+  - `apiKey` is used as the upstream credential value and is required for regular providers. It is not required for CloudGPT when `authType` is `azure-cli`.
+  - `authType` (optional): Controls how credentials are sent upstream. Supports `x-api-key` and `authorization` for regular providers. Anthropic providers default to `x-api-key`; OpenAI-compatible and OpenAI Responses providers default to `authorization`. When set to `authorization`, the proxy sends `Authorization: Bearer <apiKey>`. `oauth2` is reserved for the built-in `codex` provider and is written automatically by `auth login --provider codex`. `azure-cli` is reserved for the built-in `cloudgpt` provider; the proxy runs `az account get-access-token --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47 --scope api://feb7b661-cac7-44a8-8dc1-163b63c23df2/.default -o json`, caches the returned access token in memory, and refreshes it before expiry.
+  - `pricingCurrency` (optional): Provider-level currency used for token cost calculation, for example `USD` or `CNY`. Quick providers default to `CNY` for DashScope and DeepSeek, and `USD` for Codex/CloudGPT/OpenRouter. Costs are grouped by currency and are not exchange-rate converted.
   - `models` (optional): Per-model configuration map. Each key is a model ID (matching the model name in requests), and the value is:
     - `temperature` (optional): Default temperature value used when the request does not specify one.
     - `topP` (optional): Default top_p value used when the request does not specify one.

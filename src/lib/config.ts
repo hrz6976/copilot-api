@@ -58,7 +58,11 @@ export interface TokenUsagePricingConfig extends TokenUsagePricingTier {
   tiers?: Array<TokenUsagePricingTier>
 }
 
-export type ProviderAuthType = "authorization" | "oauth2" | "x-api-key"
+export type ProviderAuthType =
+  | "authorization"
+  | "azure-cli"
+  | "oauth2"
+  | "x-api-key"
 export const SUPPORTED_PROVIDER_TYPES = [
   "anthropic",
   "openai-compatible",
@@ -522,6 +526,17 @@ export function resolveProviderAuthType(
     return defaultAuthType
   }
 
+  if (authType === "azure-cli") {
+    if (providerName === "cloudgpt") {
+      return authType
+    }
+
+    consola.warn(
+      `Provider ${providerName} has authType 'azure-cli', which is only supported by the builtin cloudgpt provider, falling back to ${defaultAuthType}`,
+    )
+    return defaultAuthType
+  }
+
   if (authType === "authorization") {
     return authType
   }
@@ -536,7 +551,10 @@ function isProviderApiKeyRequired(
   providerName: string,
   authType: ProviderAuthType,
 ): boolean {
-  return !(providerName === "codex" && authType === "oauth2")
+  return !(
+    (providerName === "codex" && authType === "oauth2")
+    || (providerName === "cloudgpt" && authType === "azure-cli")
+  )
 }
 
 export function getRawProviderConfig(name: string): ProviderConfig | null {

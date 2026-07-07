@@ -13,10 +13,12 @@ import {
   type ProviderConfig,
   type ProviderType,
 } from "./lib/config"
+import { CLOUDGPT_AZURE_LOGIN_COMMAND } from "./lib/cloudgpt-token"
 import { loginCodex } from "./lib/oauth/codex"
 import { PATHS, ensurePaths } from "./lib/paths"
 import {
   QUICK_PROVIDER_CONFIGS,
+  type QuickProviderConfig,
   type QuickProviderName,
 } from "./lib/quick-providers"
 import { state } from "./lib/state"
@@ -32,7 +34,7 @@ const authArgs = {
   provider: {
     type: "string",
     description:
-      "Provider to log in with or configure (copilot, codex, opencode-go, deepseek, dashscope, openrouter, custom)",
+      "Provider to log in with or configure (copilot, codex, opencode-go, deepseek, dashscope, cloudgpt, openrouter, custom)",
   },
   verbose: {
     alias: "v",
@@ -73,6 +75,7 @@ const AUTH_PROVIDER_LABELS: Record<AuthProviderName, string> = {
   "opencode-go": "OpenCode Go",
   deepseek: "DeepSeek",
   dashscope: "DashScope",
+  cloudgpt: "CloudGPT",
   openrouter: "OpenRouter",
   custom: "Custom provider",
 }
@@ -368,7 +371,7 @@ async function promptQuickProviderBaseUrl(
 function buildCustomProviderConfig(
   existingProviderConfig: ProviderConfig,
   options: {
-    apiKey: string
+    apiKey?: string
     authType?: ProviderAuthType
     baseUrl: string
     pricingCurrency?: string
@@ -379,7 +382,7 @@ function buildCustomProviderConfig(
     type: options.type,
     enabled: true,
     baseUrl: options.baseUrl,
-    apiKey: options.apiKey,
+    ...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
     ...(options.authType ? { authType: options.authType } : {}),
     pricingCurrency:
       options.pricingCurrency ?? existingProviderConfig.pricingCurrency,
@@ -387,6 +390,22 @@ function buildCustomProviderConfig(
       { models: existingProviderConfig.models }
     : {}),
   }
+}
+
+function logQuickProviderOnboarding(providerName: QuickProviderName): void {
+  if (providerName !== "cloudgpt") {
+    return
+  }
+
+  consola.info(
+    "CloudGPT uses your local Azure CLI session instead of an API key.",
+  )
+  consola.info(
+    `Before starting the proxy, run: ${CLOUDGPT_AZURE_LOGIN_COMMAND}`,
+  )
+  consola.info(
+    "The proxy will request and refresh CloudGPT AAD tokens automatically.",
+  )
 }
 
 async function configureCustomProvider(): Promise<void> {
@@ -421,11 +440,13 @@ async function configureCustomProvider(): Promise<void> {
 async function configureQuickProvider(
   providerName: QuickProviderName,
 ): Promise<void> {
-  const defaultProviderConfig = QUICK_PROVIDER_CONFIGS[providerName]
-  const apiKey = await promptRequiredSecret(
-    `Enter ${providerName} apiKey`,
-    "apiKey",
-  )
+  const defaultProviderConfig: QuickProviderConfig =
+    QUICK_PROVIDER_CONFIGS[providerName]
+  logQuickProviderOnboarding(providerName)
+  const apiKey =
+    defaultProviderConfig.requiresApiKey === false ?
+      undefined
+    : await promptRequiredSecret(`Enter ${providerName} apiKey`, "apiKey")
   const type =
     defaultProviderConfig.editableType ?
       await promptQuickProviderType(defaultProviderConfig.type)
@@ -439,6 +460,7 @@ async function configureQuickProvider(
     providerName,
     buildCustomProviderConfig(existingProviderConfig, {
       apiKey,
+      authType: defaultProviderConfig.authType,
       baseUrl,
       pricingCurrency: defaultProviderConfig.pricingCurrency,
       type,

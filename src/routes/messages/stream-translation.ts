@@ -34,7 +34,7 @@ export function translateChunkToAnthropicEvents(
   }
 
   const choice = chunk.choices[0]
-  const { delta } = choice
+  const delta = choice.delta ?? {}
 
   handleMessageStart(state, events, chunk)
 
@@ -53,7 +53,31 @@ export function flushPendingAnthropicStreamEvents(
   state: AnthropicStreamState,
 ): Array<AnthropicStreamEventData> {
   const events: Array<AnthropicStreamEventData> = []
+  if (state.contentBlockOpen) {
+    events.push({
+      type: "content_block_stop",
+      index: state.contentBlockIndex,
+    })
+    state.contentBlockOpen = false
+    state.contentBlockIndex++
+  }
+
   completePendingMessage(state, events)
+  if (state.messageStartSent && !state.messageStopSent) {
+    events.push(
+      {
+        type: "message_delta",
+        delta: {
+          stop_reason: "end_turn",
+          stop_sequence: null,
+        },
+      },
+      {
+        type: "message_stop",
+      },
+    )
+    state.messageStopSent = true
+  }
   return events
 }
 
@@ -74,6 +98,7 @@ function completePendingMessage(
     type: "message_stop",
   })
   state.pendingMessageDelta = undefined
+  state.messageStopSent = true
 }
 
 function handleFinish(
@@ -95,7 +120,7 @@ function handleFinish(
       state.contentBlockOpen = false
       state.contentBlockIndex++
       if (!toolBlockOpen) {
-        handleReasoningOpaque(choice.delta, events, state)
+        handleReasoningOpaque(choice.delta ?? {}, events, state)
       }
     }
 
@@ -367,6 +392,7 @@ function handleMessageStart(
       },
     })
     state.messageStartSent = true
+    state.messageStopSent = false
   }
 }
 

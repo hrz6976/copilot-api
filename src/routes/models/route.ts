@@ -6,6 +6,7 @@ import { createHandlerLogger } from "~/lib/logger"
 import { toClientModelId } from "~/lib/models"
 import { resolveProviderConfig } from "~/lib/provider-resolver"
 import { state } from "~/lib/state"
+import { getModels as getCloudGptModels } from "~/services/cloudgpt/get-models"
 import type { Model } from "~/services/copilot/get-models"
 import { getModels as getCodexModels } from "~/services/codex/get-models"
 import { forwardProviderModels } from "~/services/providers/provider-proxy"
@@ -99,6 +100,13 @@ async function getProviderModels(
     if (providerConfig.name === "codex") {
       const codexModels = getCodexModels().data
       return codexModels
+        .map((model) => normalizeProviderModel(providerConfig.name, model))
+        .filter((model): model is ClientModel => model !== null)
+    }
+
+    if (providerConfig.name === "cloudgpt") {
+      const cloudGptModels = getCloudGptModels().data
+      return cloudGptModels
         .map((model) => normalizeProviderModel(providerConfig.name, model))
         .filter((model): model is ClientModel => model !== null)
     }

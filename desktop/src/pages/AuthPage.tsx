@@ -37,12 +37,18 @@ const PROVIDER_COLORS: Record<QuickProviderName, string> = {
   'opencode-go': 'bg-sky-500',
   deepseek: 'bg-emerald-500',
   dashscope: 'bg-orange-500',
+  cloudgpt: 'bg-blue-500',
   openrouter: 'bg-violet-500',
 }
 // Renderer cannot import main-process config. Keep this in sync with src/lib/quick-providers.ts.
 const QUICK_PROVIDER_DEFAULTS: Record<
   QuickProviderName,
-  { baseUrl: string; editableType: boolean; type: ProviderType }
+  {
+    baseUrl: string
+    editableType: boolean
+    requiresApiKey?: boolean
+    type: ProviderType
+  }
 > = {
   'opencode-go': {
     baseUrl: 'https://opencode.ai/zen/go',
@@ -57,6 +63,12 @@ const QUICK_PROVIDER_DEFAULTS: Record<
   dashscope: {
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode',
     editableType: true,
+    type: 'openai-compatible',
+  },
+  cloudgpt: {
+    baseUrl: 'https://cloudgpt-openai.azure-api.net/openai',
+    editableType: true,
+    requiresApiKey: false,
     type: 'openai-compatible',
   },
   openrouter: {
@@ -229,6 +241,8 @@ export default function AuthPage({ onBack, onSuccess }: AuthPageProps) {
         return t('auth.providerDeepseek')
       case 'dashscope':
         return t('auth.providerDashscope')
+      case 'cloudgpt':
+        return t('auth.providerCloudgpt')
       case 'openrouter':
         return t('auth.providerOpenrouter')
     }
@@ -244,6 +258,8 @@ export default function AuthPage({ onBack, onSuccess }: AuthPageProps) {
   const isCustomProvider = providerChoice === 'custom'
   const canEditProviderType =
     providerChoice === 'custom' || selectedQuickProvider?.editableType
+  const requiresProviderApiKey =
+    providerChoice === 'custom' || selectedQuickProvider?.requiresApiKey !== false
 
   return (
     <div className="flex flex-col h-screen bg-canvas">
@@ -316,18 +332,19 @@ export default function AuthPage({ onBack, onSuccess }: AuthPageProps) {
               <div className="flex items-center gap-3 mb-3">
                 <div className="flex-1 border-t border-line-soft" />
                 <span className="text-[11px] font-semibold text-ink-faint uppercase tracking-wider">
-                  API Key
+                  Providers
                 </span>
                 <div className="flex-1 border-t border-line-soft" />
               </div>
 
-              {/* Provider grid: 2x2 */}
+              {/* Provider grid */}
               <div className="grid grid-cols-2 gap-2 mb-3">
                 {(
                   [
                     'opencode-go',
                     'deepseek',
                     'dashscope',
+                    'cloudgpt',
                     'openrouter',
                   ] as QuickProviderName[]
                 ).map((provider) => (
@@ -506,20 +523,24 @@ export default function AuthPage({ onBack, onSuccess }: AuthPageProps) {
                   />
                 </label>
 
-                <label
-                  className={`flex flex-col gap-1.5 ${isCustomProvider ? 'sm:col-span-2' : ''}`}
-                >
-                  <span className="text-[13px] text-ink-faint">
-                    {t('auth.providerApiKey')}
-                  </span>
-                  <textarea
-                    value={providerApiKey}
-                    onChange={(e) => setProviderApiKey(e.target.value)}
-                    placeholder="sk-..."
-                    rows={isCustomProvider ? 2 : 3}
-                    className="w-full px-3 py-2.5 border border-line rounded-lg text-[13px] resize-none focus:outline-none focus:ring-2 focus:ring-accent/40 font-mono bg-surface text-ink placeholder-ink-faint"
-                  />
-                </label>
+                {requiresProviderApiKey ?
+                  <label
+                    className={`flex flex-col gap-1.5 ${isCustomProvider ? 'sm:col-span-2' : ''}`}
+                  >
+                    <span className="text-[13px] text-ink-faint">
+                      {t('auth.providerApiKey')}
+                    </span>
+                    <textarea
+                      value={providerApiKey}
+                      onChange={(e) => setProviderApiKey(e.target.value)}
+                      placeholder="sk-..."
+                      rows={isCustomProvider ? 2 : 3}
+                      className="w-full px-3 py-2.5 border border-line rounded-lg text-[13px] resize-none focus:outline-none focus:ring-2 focus:ring-accent/40 font-mono bg-surface text-ink placeholder-ink-faint"
+                    />
+                  </label>
+                : <p className="rounded-lg border border-line-soft bg-sunken px-3 py-2 text-[12px] text-ink-faint">
+                    {t('auth.providerAzureCliAuth')}
+                  </p>}
 
                 {isCustomProvider && (
                   <label className="flex flex-col gap-1.5">
@@ -549,7 +570,9 @@ export default function AuthPage({ onBack, onSuccess }: AuthPageProps) {
 
               <button
                 onClick={handleSaveProvider}
-                disabled={loading || !providerApiKey.trim()}
+                disabled={
+                  loading || (requiresProviderApiKey && !providerApiKey.trim())
+                }
                 className="w-full py-2.5 bg-accent-strong text-white text-[13px] font-semibold rounded-lg hover:bg-accent-strong/90 disabled:opacity-50 transition-colors"
               >
                 {loading ? t('auth.verifying') : t('auth.confirmAdd')}

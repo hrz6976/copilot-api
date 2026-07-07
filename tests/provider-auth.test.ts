@@ -93,4 +93,16 @@ describe("resolveProviderAuthType", () => {
       resolveProviderAuthType("custom", "oauth2", "openai-responses"),
     ).toBe("authorization")
   })
+
+  test("allows azure-cli auth for CloudGPT", () => {
+    expect(
+      resolveProviderAuthType("cloudgpt", "azure-cli", "openai-compatible"),
+    ).toBe("azure-cli")
+  })
+
+  test("falls back for non-CloudGPT azure-cli providers", () => {
+    expect(
+      resolveProviderAuthType("custom", "azure-cli", "openai-compatible"),
+    ).toBe("authorization")
+  })
 })

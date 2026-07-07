@@ -12,7 +12,9 @@ export interface Locale {
     providerApiKey: string
     providerAuthType: string
     providerAuthTypeDefault: string
+    providerAzureCliAuth: string
     providerBaseUrl: string
+    providerCloudgpt: string
     providerDashscope: string
     providerDeepseek: string
     providerInvalid: string

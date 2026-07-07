@@ -1,10 +1,12 @@
-import type { ProviderType } from "./config"
+import type { ProviderAuthType, ProviderType } from "./config"
 
-interface QuickProviderConfig {
+export interface QuickProviderConfig {
   type: ProviderType
   baseUrl: string
   pricingCurrency: string
   editableType: boolean
+  authType?: ProviderAuthType
+  requiresApiKey?: boolean
 }
 
 export const QUICK_PROVIDER_CONFIGS = {
@@ -25,6 +27,14 @@ export const QUICK_PROVIDER_CONFIGS = {
     baseUrl: "https://dashscope.aliyuncs.com/compatible-mode",
     pricingCurrency: "CNY",
     editableType: true,
+  },
+  cloudgpt: {
+    type: "openai-compatible",
+    baseUrl: "https://cloudgpt-openai.azure-api.net/openai",
+    pricingCurrency: "USD",
+    editableType: true,
+    authType: "azure-cli",
+    requiresApiKey: false,
   },
   openrouter: {
     type: "anthropic",

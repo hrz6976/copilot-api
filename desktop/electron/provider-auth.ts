@@ -9,7 +9,10 @@ import {
   type ProviderType,
 } from '../../src/lib/config'
 import { loginCodex } from '../../src/lib/oauth/codex'
-import { QUICK_PROVIDER_CONFIGS } from '../../src/lib/quick-providers'
+import {
+  QUICK_PROVIDER_CONFIGS,
+  type QuickProviderConfig,
+} from '../../src/lib/quick-providers'
 import { persistCodexCredentials } from '../../src/lib/token'
 import type {
   AuthResult,
@@ -108,7 +111,7 @@ function normalizeProviderType(type: string): ProviderType {
 function buildProviderConfig(
   existingProviderConfig: ProviderConfig,
   options: {
-    apiKey: string
+    apiKey?: string
     authType?: ProviderAuthType
     baseUrl: string
     pricingCurrency?: string
@@ -119,7 +122,7 @@ function buildProviderConfig(
     type: options.type,
     enabled: true,
     baseUrl: options.baseUrl,
-    apiKey: options.apiKey,
+    ...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
     ...(options.authType ? { authType: options.authType } : {}),
     pricingCurrency:
       options.pricingCurrency ?? existingProviderConfig.pricingCurrency,
@@ -213,7 +216,8 @@ export function configureDesktopProvider(
     }
   }
 
-  const quickProviderConfig = QUICK_PROVIDER_CONFIGS[input.provider]
+  const quickProviderConfig: QuickProviderConfig =
+    QUICK_PROVIDER_CONFIGS[input.provider]
   const type =
     quickProviderConfig.editableType ?
       normalizeProviderType(input.type ?? quickProviderConfig.type)
@@ -226,7 +230,11 @@ export function configureDesktopProvider(
   writeProviderConfig(
     input.provider,
     buildProviderConfig(existingProviderConfig, {
-      apiKey: normalizeRequiredApiKey(input.apiKey),
+      apiKey:
+        quickProviderConfig.requiresApiKey === false ?
+          undefined
+        : normalizeRequiredApiKey(input.apiKey ?? ''),
+      authType: quickProviderConfig.authType,
       baseUrl,
       pricingCurrency: quickProviderConfig.pricingCurrency,
       type,

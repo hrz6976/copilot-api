@@ -90,7 +90,7 @@ describe("auth login validation", () => {
     )
 
     expect(output).toBe(
-      "Unknown provider 'unknown'. Expected one of: copilot, codex, opencode-go, deepseek, dashscope, openrouter, custom",
+      "Unknown provider 'unknown'. Expected one of: copilot, codex, opencode-go, deepseek, dashscope, cloudgpt, openrouter, custom",
     )
   })
 
@@ -272,6 +272,92 @@ describe("auth login validation", () => {
       baseUrl: "https://dashscope.example/api",
       enabled: true,
       pricingCurrency: "CNY",
+      type: "openai-responses",
+    })
+  })
+
+  test("configures cloudgpt from the quick provider template with defaults", () => {
+    const tempDir = createTempDir()
+    writeConfigFile(tempDir, {})
+
+    runScript(
+      tempDir,
+      `
+      const consolaModule = await import("consola");
+      const consola = consolaModule.default ?? consolaModule;
+      const answers = ["__default__", ""];
+      consola.prompt = async () => answers.shift();
+      consola.info = () => {};
+      consola.success = () => {};
+      const { runAuthLogin } = await import("./src/auth");
+      await runAuthLogin({ provider: "cloudgpt", verbose: false, showToken: false });
+      `,
+    )
+
+    expect(readConfigFile(tempDir).providers?.cloudgpt).toEqual({
+      authType: "azure-cli",
+      baseUrl: "https://cloudgpt-openai.azure-api.net/openai",
+      enabled: true,
+      pricingCurrency: "USD",
+      type: "openai-compatible",
+    })
+  })
+
+  test("prints CloudGPT Azure CLI setup guidance during quick provider setup", () => {
+    const tempDir = createTempDir()
+    writeConfigFile(tempDir, {})
+
+    const output = runScript(
+      tempDir,
+      `
+      const consolaModule = await import("consola");
+      const consola = consolaModule.default ?? consolaModule;
+      const answers = ["__default__", ""];
+      const infoMessages = [];
+      consola.prompt = async () => answers.shift();
+      consola.info = (message) => infoMessages.push(String(message));
+      consola.success = () => {};
+      const { runAuthLogin } = await import("./src/auth");
+      await runAuthLogin({ provider: "cloudgpt", verbose: false, showToken: false });
+      console.log(JSON.stringify(infoMessages));
+      `,
+    )
+
+    const infoMessages = JSON.parse(output) as string[]
+    expect(infoMessages).toContain(
+      "CloudGPT uses your local Azure CLI session instead of an API key.",
+    )
+    expect(infoMessages).toContain(
+      "Before starting the proxy, run: az login --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47",
+    )
+    expect(infoMessages).toContain(
+      "The proxy will request and refresh CloudGPT AAD tokens automatically.",
+    )
+  })
+
+  test("configures cloudgpt with custom quick provider type and baseUrl", () => {
+    const tempDir = createTempDir()
+    writeConfigFile(tempDir, {})
+
+    runScript(
+      tempDir,
+      `
+      const consolaModule = await import("consola");
+      const consola = consolaModule.default ?? consolaModule;
+      const answers = ["openai-responses", "https://cloudgpt.example/openai///"];
+      consola.prompt = async () => answers.shift();
+      consola.info = () => {};
+      consola.success = () => {};
+      const { runAuthLogin } = await import("./src/auth");
+      await runAuthLogin({ provider: "cloudgpt", verbose: false, showToken: false });
+      `,
+    )
+
+    expect(readConfigFile(tempDir).providers?.cloudgpt).toEqual({
+      authType: "azure-cli",
+      baseUrl: "https://cloudgpt.example/openai",
+      enabled: true,
+      pricingCurrency: "USD",
       type: "openai-responses",
     })
   })

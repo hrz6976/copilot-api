@@ -4,7 +4,11 @@ import { events } from "fetch-event-stream"
 import { streamSSE } from "hono/streaming"
 
 import { logCodexRateLimitsEvent } from "~/lib/codex-rate-limit"
-import { type ModelConfig, resolveEffectiveProviderType } from "~/lib/config"
+import {
+  type ModelConfig,
+  type ResolvedProviderConfig,
+  resolveEffectiveProviderType,
+} from "~/lib/config"
 import { HTTPError } from "~/lib/error"
 import { createHandlerLogger, debugJson } from "~/lib/logger"
 import { resolveProviderConfig } from "~/lib/provider-resolver"
@@ -18,6 +22,19 @@ import {
   applyResponsesApiContextManagement,
   compactInputByLatestCompaction,
 } from "~/routes/responses/utils"
+import {
+  createOpenAIChatToResponsesStreamState,
+  finalizeOpenAIChatToResponsesStream,
+  ResponsesToOpenAIChatTranslationError,
+  translateOpenAIChatResponseToResponsesResult,
+  translateOpenAIChatStreamChunkToResponsesEvents,
+  translateResponsesPayloadToOpenAIChat,
+} from "~/routes/chat-completions/translation"
+import type {
+  ChatCompletionChunk,
+  ChatCompletionResponse,
+  ChatCompletionsPayload,
+} from "~/services/copilot/create-chat-completions"
 import type {
   ResponsesPayload,
   ResponsesResult,
@@ -28,6 +45,7 @@ import { forwardCodexResponses } from "~/services/codex/create-responses"
 import { getModels as getCodexModels } from "~/services/codex/get-models"
 import {
   createProviderProxyResponse,
+  forwardProviderChatCompletions,
   forwardProviderResponses,
 } from "~/services/providers/provider-proxy"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
@@ -47,11 +65,34 @@ export async function handleProviderResponsesForProvider(
     provider,
   })
   const providerConfig = await resolveProviderConfig(provider)
-  if (
-    !providerConfig
-    || resolveEffectiveProviderType(providerConfig, payload.model)
-      !== "openai-responses"
-  ) {
+  if (!providerConfig) {
+    return c.json(
+      {
+        error: {
+          message: `Provider '${provider}' does not support the /v1/responses endpoint`,
+          type: "invalid_request_error",
+        },
+      },
+      400,
+    )
+  }
+
+  const effectiveType = resolveEffectiveProviderType(
+    providerConfig,
+    payload.model,
+  )
+  const modelConfig = providerConfig.models?.[payload.model]
+
+  if (effectiveType === "openai-compatible") {
+    return await handleOpenAICompatibleProviderResponses(c, {
+      modelConfig,
+      payload,
+      provider,
+      providerConfig,
+    })
+  }
+
+  if (effectiveType !== "openai-responses") {
     return c.json(
       {
         error: {
@@ -77,9 +118,7 @@ export async function handleProviderResponsesForProvider(
     contextManagement,
     provider,
   })
-
   compactInputByLatestCompaction(payload)
-  const modelConfig = providerConfig.models?.[payload.model]
 
   if (providerConfig.name === "codex") {
     const upstreamResponse = await forwardCodexResponses(
@@ -142,6 +181,266 @@ export async function handleProviderResponsesForProvider(
 
   return createProviderProxyResponse(upstreamResponse)
 }
+
+const handleOpenAICompatibleProviderResponses = async (
+  c: Context,
+  options: {
+    modelConfig: ModelConfig | undefined
+    payload: ResponsesPayload
+    provider: string
+    providerConfig: ResolvedProviderConfig
+  },
+): Promise<Response> => {
+  const { modelConfig, payload, provider, providerConfig } = options
+  let chatPayload: ChatCompletionsPayload
+  try {
+    chatPayload = translateResponsesPayloadToOpenAIChat(payload)
+  } catch (error) {
+    if (error instanceof ResponsesToOpenAIChatTranslationError) {
+      return c.json(
+        {
+          error: {
+            message: error.message,
+            type: "invalid_request_error",
+          },
+        },
+        400,
+      )
+    }
+    throw error
+  }
+
+  applyMissingExtraBody(chatPayload, {
+    extraBody: modelConfig?.extraBody,
+  })
+  applyProviderStreamOptions(chatPayload)
+
+  debugJson(logger, "provider.responses.openai_compatible.request", {
+    payload: chatPayload,
+    provider,
+  })
+
+  const upstreamResponse = await forwardProviderChatCompletions(
+    providerConfig,
+    chatPayload,
+    c.req.raw.headers,
+  )
+
+  if (!upstreamResponse.ok) {
+    throw new HTTPError(
+      `Failed to create ${provider} chat completions for responses`,
+      upstreamResponse,
+    )
+  }
+
+  const recordUsage = createProviderResponsesUsageRecorder(
+    payload,
+    provider,
+    modelConfig,
+    providerConfig.pricingCurrency,
+  )
+  const contentType = upstreamResponse.headers.get("content-type") ?? ""
+  const isStreamingResponse =
+    Boolean(chatPayload.stream) && contentType.includes("text/event-stream")
+
+  if (isStreamingResponse) {
+    return streamOpenAICompatibleProviderResponses(c, upstreamResponse, {
+      payload,
+      provider,
+      recordUsage,
+    })
+  }
+
+  const chatBody = (await upstreamResponse
+    .clone()
+    .json()) as ChatCompletionResponse
+  const responsesBody = translateOpenAIChatResponseToResponsesResult(
+    chatBody,
+    payload,
+  )
+  recordUsage(normalizeResponsesUsage(responsesBody.usage))
+
+  return c.json(responsesBody)
+}
+
+const applyMissingExtraBody = (
+  payload: Record<string, unknown>,
+  options: { extraBody: Record<string, unknown> | undefined },
+): void => {
+  for (const [key, value] of Object.entries(options.extraBody ?? {})) {
+    if (!Object.hasOwn(payload, key)) {
+      payload[key] = value
+    }
+  }
+}
+
+const applyProviderStreamOptions = (payload: ChatCompletionsPayload): void => {
+  if (!payload.stream) {
+    return
+  }
+
+  payload.stream_options = {
+    ...(payload.stream_options ?? {}),
+    include_usage: true,
+  }
+}
+
+const streamOpenAICompatibleProviderResponses = (
+  c: Context,
+  upstreamResponse: Response,
+  options: {
+    payload: ResponsesPayload
+    provider: string
+    recordUsage: (usage: UsageTokens) => void
+  },
+): Response => {
+  logger.debug("provider.responses.openai_compatible.streaming", {
+    provider: options.provider,
+  })
+
+  return streamSSE(c, async (stream) => {
+    const streamState = createOpenAIChatToResponsesStreamState(options.payload)
+    let usage: UsageTokens = {}
+    let streamFailed = false
+
+    try {
+      for await (const chunk of events(upstreamResponse)) {
+        debugJson(
+          logger,
+          "provider.responses.openai_compatible.stream_chunk",
+          chunk,
+        )
+
+        if (!chunk.data || chunk.data === "[DONE]") {
+          if (chunk.data === "[DONE]") {
+            break
+          }
+          continue
+        }
+
+        if (chunk.event === "error") {
+          const errorEvent = createResponsesStreamErrorEvent(
+            chunk.data,
+            streamState,
+          )
+          await stream.writeSSE({
+            event: errorEvent.type,
+            data: JSON.stringify(errorEvent),
+          })
+          streamFailed = true
+          break
+        }
+
+        const parsedChunk = parseOpenAICompatibleChatStreamChunk(chunk.data)
+        if (!parsedChunk) {
+          continue
+        }
+
+        for (const event of translateOpenAIChatStreamChunkToResponsesEvents(
+          parsedChunk,
+          streamState,
+        )) {
+          const nextUsage = getResponsesStreamEventUsage(event)
+          if (nextUsage) {
+            usage = nextUsage
+          }
+          await stream.writeSSE({
+            event: event.type,
+            data: JSON.stringify(event),
+          })
+        }
+      }
+
+      if (!streamFailed) {
+        for (const event of finalizeOpenAIChatToResponsesStream(streamState)) {
+          const nextUsage = getResponsesStreamEventUsage(event)
+          if (nextUsage) {
+            usage = nextUsage
+          }
+          await stream.writeSSE({
+            event: event.type,
+            data: JSON.stringify(event),
+          })
+        }
+      }
+    } finally {
+      options.recordUsage(usage)
+    }
+  })
+}
+
+const parseOpenAICompatibleChatStreamChunk = (
+  data: string,
+): ChatCompletionChunk | null => {
+  try {
+    const parsed = JSON.parse(data) as unknown
+    if (isChatCompletionChunk(parsed)) {
+      return parsed
+    }
+    return null
+  } catch (error) {
+    logger.error("provider.responses.openai_compatible.parse_chunk_error", {
+      data,
+      error,
+    })
+    return null
+  }
+}
+
+const isChatCompletionChunk = (value: unknown): value is ChatCompletionChunk =>
+  isRecord(value)
+  && value.object === "chat.completion.chunk"
+  && typeof value.id === "string"
+  && typeof value.created === "number"
+  && typeof value.model === "string"
+  && Array.isArray(value.choices)
+
+const createResponsesStreamErrorEvent = (
+  data: string,
+  streamState: ReturnType<typeof createOpenAIChatToResponsesStreamState>,
+): ResponseStreamEvent => {
+  let message = "Provider chat completion stream returned an error"
+  let code: string | null = null
+  let param: string | null = null
+  let type: string | null = null
+
+  try {
+    const parsed = JSON.parse(data) as unknown
+    const errorCandidate = isRecord(parsed) ? parsed.error : parsed
+    if (isRecord(errorCandidate)) {
+      message =
+        typeof errorCandidate.message === "string" ?
+          errorCandidate.message
+        : message
+      code =
+        typeof errorCandidate.code === "string" ? errorCandidate.code : null
+      param =
+        typeof errorCandidate.param === "string" ? errorCandidate.param : null
+      type =
+        typeof errorCandidate.type === "string" ? errorCandidate.type : null
+    }
+  } catch {
+    if (data.trim().length > 0) {
+      message = data
+    }
+  }
+
+  return {
+    type: "error",
+    sequence_number: ++streamState.sequenceNumber,
+    code,
+    message,
+    param,
+    error: {
+      code,
+      message,
+      type,
+    },
+  }
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null
 
 const createProviderResponsesUsageRecorder = (
   payload: ResponsesPayload,

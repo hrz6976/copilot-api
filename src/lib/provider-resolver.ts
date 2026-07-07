@@ -3,6 +3,7 @@ import {
   getProviderConfig,
   type ResolvedProviderConfig,
 } from "~/lib/config"
+import { getCloudGptAzureCliAccessToken } from "~/lib/cloudgpt-token"
 import { state } from "~/lib/state"
 import { setupCodexToken } from "~/lib/token"
 
@@ -48,5 +49,21 @@ export async function resolveProviderConfig(
     }
   }
 
-  return getProviderConfig(normalizedProviderName)
+  const providerConfig = getProviderConfig(normalizedProviderName)
+  if (!providerConfig) {
+    return null
+  }
+
+  if (
+    providerConfig.name === "cloudgpt"
+    && providerConfig.authType === "azure-cli"
+  ) {
+    return {
+      ...providerConfig,
+      apiKey: await getCloudGptAzureCliAccessToken(),
+      authType: "authorization",
+    }
+  }
+
+  return providerConfig
 }

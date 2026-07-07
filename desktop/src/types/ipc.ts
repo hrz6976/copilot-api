@@ -26,11 +26,15 @@ export type ProviderType =
 export type ProviderAuthType = 'authorization' | 'x-api-key'
 export type ProviderAuthTypeInput = ProviderAuthType | '__default__'
 export type QuickProviderName =
-  'opencode-go' | 'deepseek' | 'dashscope' | 'openrouter'
+  | 'opencode-go'
+  | 'deepseek'
+  | 'dashscope'
+  | 'cloudgpt'
+  | 'openrouter'
 
 export type ProviderAuthInput =
   | {
-      apiKey: string
+      apiKey?: string
       baseUrl?: string
       provider: QuickProviderName
       type?: ProviderType

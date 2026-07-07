@@ -154,6 +154,68 @@ describe('desktop provider auth', () => {
     })
   })
 
+  test('configures cloudgpt from the quick provider template with defaults', () => {
+    let writtenProviderName = ''
+    let writtenProviderConfig: ProviderConfig | undefined
+
+    const result = configureDesktopProvider(
+      {
+        provider: 'cloudgpt',
+      },
+      {
+        getEnabledProviders: () => ['cloudgpt'],
+        getRawProviderConfig: () => null,
+        setProviderConfig(name, provider) {
+          writtenProviderName = name
+          writtenProviderConfig = provider
+          return provider
+        },
+      },
+    )
+
+    expect(result).toEqual({
+      mode: 'provider',
+      providers: ['cloudgpt'],
+      success: true,
+    })
+    expect(writtenProviderName).toBe('cloudgpt')
+    expect(writtenProviderConfig).toEqual({
+      authType: 'azure-cli',
+      baseUrl: 'https://cloudgpt-openai.azure-api.net/openai',
+      enabled: true,
+      pricingCurrency: 'USD',
+      type: 'openai-compatible',
+    })
+  })
+
+  test('configures cloudgpt with an editable provider type', () => {
+    let writtenProviderConfig: ProviderConfig | undefined
+
+    configureDesktopProvider(
+      {
+        baseUrl: 'https://cloudgpt.example/openai///',
+        provider: 'cloudgpt',
+        type: 'openai-responses',
+      },
+      {
+        getEnabledProviders: () => ['cloudgpt'],
+        getRawProviderConfig: () => null,
+        setProviderConfig(_name, provider) {
+          writtenProviderConfig = provider
+          return provider
+        },
+      },
+    )
+
+    expect(writtenProviderConfig).toEqual({
+      authType: 'azure-cli',
+      baseUrl: 'https://cloudgpt.example/openai',
+      enabled: true,
+      pricingCurrency: 'USD',
+      type: 'openai-responses',
+    })
+  })
+
   test('rejects invalid provider input before writing config', () => {
     let writes = 0
     const dependencies = {

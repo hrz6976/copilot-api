@@ -199,17 +199,87 @@ describe("provider/model aliases on top-level chat completions route", () => {
     })
   })
 
-  test("rejects providers without chat completions support", async () => {
+  test("translates chat completions to openai-responses providers", async () => {
     providerConfig = {
       ...(providerConfig as ResolvedProviderConfig),
+      baseUrl: "https://responses.example",
+      models: {
+        "gpt-resp": {},
+      },
       type: "openai-responses",
     }
+    fetchMock.mockImplementationOnce(
+      (_url: string | URL | Request, _init?: RequestInit) =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: "resp-test",
+              object: "response",
+              created_at: 0,
+              model: "gpt-resp",
+              output: [
+                {
+                  id: "msg-1",
+                  type: "message",
+                  role: "assistant",
+                  status: "completed",
+                  content: [
+                    {
+                      type: "output_text",
+                      text: "answer from responses",
+                      annotations: [],
+                    },
+                  ],
+                },
+              ],
+              output_text: "answer from responses",
+              status: "completed",
+              usage: {
+                input_tokens: 10,
+                output_tokens: 3,
+                total_tokens: 13,
+                input_tokens_details: {
+                  cached_tokens: 2,
+                },
+              },
+              error: null,
+              incomplete_details: null,
+              instructions: null,
+              metadata: null,
+              parallel_tool_calls: true,
+              temperature: null,
+              tool_choice: "auto",
+              tools: [],
+              top_p: null,
+            }),
+            {
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          ),
+        ),
+    )
 
     const app = createApp()
     const response = await app.request("/v1/chat/completions", {
       body: JSON.stringify({
-        messages: [{ content: "hello", role: "user" }],
-        model: "dash/qwen-plus",
+        max_tokens: 256,
+        messages: [
+          { content: "system prompt", role: "system" },
+          { content: "hello", role: "user" },
+        ],
+        model: "dash/gpt-resp",
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "lookup",
+              description: "Lookup data",
+              parameters: { type: "object", properties: {} },
+            },
+          },
+        ],
       }),
       headers: {
         "content-type": "application/json",
@@ -217,15 +287,420 @@ describe("provider/model aliases on top-level chat completions route", () => {
       method: "POST",
     })
 
-    expect(response.status).toBe(400)
-    expect(fetchMock).not.toHaveBeenCalled()
-    expect(await response.json()).toEqual({
-      error: {
-        message:
-          "Provider 'dash' does not support the /v1/chat/completions endpoint",
-        type: "invalid_request_error",
+    expect(response.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe("https://responses.example/v1/responses")
+
+    const upstreamBody = JSON.parse((init as RequestInit).body as string) as {
+      input: Array<Record<string, unknown>>
+      instructions: string
+      max_output_tokens: number
+      model: string
+      tools: Array<Record<string, unknown>>
+    }
+    expect(upstreamBody).toMatchObject({
+      instructions: "system prompt",
+      max_output_tokens: 256,
+      model: "gpt-resp",
+      tools: [
+        {
+          type: "function",
+          name: "lookup",
+          strict: false,
+        },
+      ],
+    })
+    expect(upstreamBody.input).toEqual([
+      {
+        type: "message",
+        role: "user",
+        content: "hello",
+      },
+    ])
+
+    expect(await response.json()).toMatchObject({
+      object: "chat.completion",
+      model: "gpt-resp",
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: "answer from responses",
+          },
+          finish_reason: "stop",
+        },
+      ],
+      usage: {
+        prompt_tokens: 10,
+        completion_tokens: 3,
+        total_tokens: 13,
       },
     })
+  })
+})
+
+describe("translated provider chat completions", () => {
+  test("streams openai-responses providers as chat completion chunks", async () => {
+    providerConfig = {
+      ...(providerConfig as ResolvedProviderConfig),
+      baseUrl: "https://responses.example",
+      models: {
+        "gpt-resp": {},
+      },
+      type: "openai-responses",
+    }
+
+    const responseBody = {
+      id: "resp-stream",
+      object: "response",
+      created_at: 0,
+      model: "gpt-resp",
+      output: [],
+      output_text: "",
+      status: "completed",
+      usage: {
+        input_tokens: 5,
+        output_tokens: 2,
+        total_tokens: 7,
+      },
+      error: null,
+      incomplete_details: null,
+      instructions: null,
+      metadata: null,
+      parallel_tool_calls: true,
+      temperature: null,
+      tool_choice: "auto",
+      tools: [],
+      top_p: null,
+    }
+    fetchMock.mockImplementationOnce(
+      (_url: string | URL | Request, _init?: RequestInit) =>
+        Promise.resolve(
+          new Response(
+            [
+              [
+                "event: response.created",
+                `data: ${JSON.stringify({
+                  type: "response.created",
+                  sequence_number: 1,
+                  response: responseBody,
+                })}`,
+              ].join("\n"),
+              [
+                "event: response.output_item.added",
+                `data: ${JSON.stringify({
+                  type: "response.output_item.added",
+                  sequence_number: 2,
+                  output_index: 0,
+                  item: {
+                    id: "msg-1",
+                    type: "message",
+                    role: "assistant",
+                    status: "in_progress",
+                    content: [],
+                  },
+                })}`,
+              ].join("\n"),
+              [
+                "event: response.output_text.delta",
+                `data: ${JSON.stringify({
+                  type: "response.output_text.delta",
+                  sequence_number: 3,
+                  output_index: 0,
+                  content_index: 0,
+                  item_id: "msg-1",
+                  delta: "stream answer",
+                })}`,
+              ].join("\n"),
+              [
+                "event: response.output_text.done",
+                `data: ${JSON.stringify({
+                  type: "response.output_text.done",
+                  sequence_number: 4,
+                  output_index: 0,
+                  content_index: 0,
+                  item_id: "msg-1",
+                  text: "stream answer",
+                })}`,
+              ].join("\n"),
+              [
+                "event: response.completed",
+                `data: ${JSON.stringify({
+                  type: "response.completed",
+                  sequence_number: 5,
+                  response: responseBody,
+                })}`,
+              ].join("\n"),
+              "",
+            ].join("\n\n"),
+            {
+              headers: {
+                "content-type": "text/event-stream",
+              },
+            },
+          ),
+        ),
+    )
+
+    const response = await createApp().request("/v1/chat/completions", {
+      body: JSON.stringify({
+        messages: [{ content: "hello", role: "user" }],
+        model: "dash/gpt-resp",
+        stream: true,
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    const text = await response.text()
+    expect(text).toContain('"object":"chat.completion.chunk"')
+    expect(text).toContain('"content":"stream answer"')
+    expect(text).toContain('"finish_reason":"stop"')
+    expect(text).toContain("data: [DONE]")
+  })
+
+  test("surfaces openai-responses stream failures as chat stream errors", async () => {
+    providerConfig = {
+      ...(providerConfig as ResolvedProviderConfig),
+      baseUrl: "https://responses.example",
+      models: {
+        "gpt-resp": {},
+      },
+      type: "openai-responses",
+    }
+
+    const responseBody = {
+      id: "resp-failed",
+      object: "response",
+      created_at: 0,
+      model: "gpt-resp",
+      output: [],
+      output_text: "",
+      status: "failed",
+      usage: {
+        input_tokens: 5,
+        output_tokens: 0,
+        total_tokens: 5,
+      },
+      error: {
+        code: "server_error",
+        message: "responses failed",
+        type: "server_error",
+      },
+      incomplete_details: null,
+      instructions: null,
+      metadata: null,
+      parallel_tool_calls: true,
+      temperature: null,
+      tool_choice: "auto",
+      tools: [],
+      top_p: null,
+    }
+    fetchMock.mockImplementationOnce(
+      (_url: string | URL | Request, _init?: RequestInit) =>
+        Promise.resolve(
+          new Response(
+            [
+              [
+                "event: response.created",
+                `data: ${JSON.stringify({
+                  type: "response.created",
+                  sequence_number: 1,
+                  response: responseBody,
+                })}`,
+              ].join("\n"),
+              [
+                "event: response.failed",
+                `data: ${JSON.stringify({
+                  type: "response.failed",
+                  sequence_number: 2,
+                  response: responseBody,
+                })}`,
+              ].join("\n"),
+              "",
+            ].join("\n\n"),
+            {
+              headers: {
+                "content-type": "text/event-stream",
+              },
+            },
+          ),
+        ),
+    )
+
+    const response = await createApp().request("/v1/chat/completions", {
+      body: JSON.stringify({
+        messages: [{ content: "hello", role: "user" }],
+        model: "dash/gpt-resp",
+        stream: true,
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    const text = await response.text()
+    expect(text).toContain("event: error")
+    expect(text).toContain('"message":"responses failed"')
+    expect(text).not.toContain('"content":"responses failed"')
+  })
+
+  test("translates chat completions to Anthropic provider messages", async () => {
+    providerConfig = {
+      apiKey: "anthropic-key",
+      authType: "x-api-key",
+      baseUrl: "https://anthropic.example",
+      models: {
+        "claude-test": {},
+      },
+      name: "anthropic",
+      type: "anthropic",
+    }
+    fetchMock.mockImplementationOnce(
+      (_url: string | URL | Request, _init?: RequestInit) =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: "msg-test",
+              type: "message",
+              role: "assistant",
+              model: "claude-test",
+              content: [{ type: "text", text: "anthropic answer" }],
+              stop_reason: "end_turn",
+              stop_sequence: null,
+              usage: {
+                input_tokens: 5,
+                output_tokens: 2,
+                cache_read_input_tokens: 1,
+              },
+            }),
+            {
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          ),
+        ),
+    )
+
+    const response = await createApp().request("/v1/chat/completions", {
+      body: JSON.stringify({
+        messages: [
+          { content: "system prompt", role: "system" },
+          { content: "hello", role: "user" },
+        ],
+        model: "anthropic/claude-test",
+      }),
+      headers: {
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe("https://anthropic.example/v1/messages")
+    expect((init as RequestInit).headers).toMatchObject({
+      "content-type": "application/json",
+      accept: "application/json",
+      "x-api-key": "anthropic-key",
+      "anthropic-version": "2023-06-01",
+    })
+    const upstreamBody = JSON.parse((init as RequestInit).body as string) as {
+      max_tokens: number
+      messages: Array<Record<string, unknown>>
+      model: string
+      system: string
+    }
+    expect(upstreamBody).toMatchObject({
+      max_tokens: 4096,
+      model: "claude-test",
+      system: "system prompt",
+      messages: [{ role: "user", content: "hello" }],
+    })
+
+    expect(await response.json()).toMatchObject({
+      object: "chat.completion",
+      model: "claude-test",
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: "anthropic answer",
+          },
+          finish_reason: "stop",
+        },
+      ],
+      usage: {
+        prompt_tokens: 6,
+        completion_tokens: 2,
+        total_tokens: 8,
+      },
+    })
+  })
+
+  test("surfaces Anthropic provider stream errors as chat stream errors", async () => {
+    providerConfig = {
+      apiKey: "anthropic-key",
+      authType: "x-api-key",
+      baseUrl: "https://anthropic.example",
+      models: {
+        "claude-test": {},
+      },
+      name: "anthropic",
+      type: "anthropic",
+    }
+    fetchMock.mockImplementationOnce(
+      (_url: string | URL | Request, _init?: RequestInit) =>
+        Promise.resolve(
+          new Response(
+            [
+              [
+                "event: error",
+                `data: ${JSON.stringify({
+                  type: "error",
+                  error: {
+                    type: "overloaded_error",
+                    message: "anthropic overloaded",
+                  },
+                })}`,
+              ].join("\n"),
+              "",
+            ].join("\n\n"),
+            {
+              headers: {
+                "content-type": "text/event-stream",
+              },
+            },
+          ),
+        ),
+    )
+
+    const response = await createApp().request("/v1/chat/completions", {
+      body: JSON.stringify({
+        messages: [{ content: "hello", role: "user" }],
+        model: "anthropic/claude-test",
+        stream: true,
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    const text = await response.text()
+    expect(text).toContain("event: error")
+    expect(text).toContain('"message":"anthropic overloaded"')
+    expect(text).not.toContain('"content":"anthropic overloaded"')
   })
 })
 

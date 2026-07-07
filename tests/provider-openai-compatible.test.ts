@@ -301,6 +301,37 @@ describe("openai-compatible provider messages", () => {
     expect(body.parallel_tool_calls).toBe(false)
   })
 
+  test("omits default parallel tool calls when no tools are translated", async () => {
+    providerConfig = {
+      ...providerConfig,
+      name: "cloudgpt",
+      baseUrl: "https://cloudgpt-openai.azure-api.net/openai",
+      models: {
+        "gpt-4.1-mini-20250414": {
+          toolContentSupportType: [],
+        },
+      },
+    } as ResolvedProviderConfig
+
+    const app = createApp()
+    const response = await app.request("/cloudgpt/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        max_tokens: 128,
+        messages: [{ role: "user", content: "hello" }],
+        model: "gpt-4.1-mini-20250414",
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    const body = JSON.parse(init.body as string) as Record<string, unknown>
+    expect(body).not.toHaveProperty("parallel_tool_calls")
+  })
+
   test("maps Anthropic thinking budget to OpenAI-compatible thinking_budget", async () => {
     const app = createApp()
     const response = await app.request("/dash/v1/messages", {

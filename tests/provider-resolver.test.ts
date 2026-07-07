@@ -19,6 +19,12 @@ interface ConfigFileShape {
       baseUrl?: string
       authType?: string
     }
+    cloudgpt?: {
+      type?: string
+      enabled?: boolean
+      baseUrl?: string
+      authType?: string
+    }
   }
 }
 
@@ -59,7 +65,11 @@ function writeCodexCredentials(
   )
 }
 
-function runScript(tempDir: string, script: string): string {
+function runScript(
+  tempDir: string,
+  script: string,
+  env: Record<string, string> = {},
+): string {
   const result = Bun.spawnSync({
     cmd: [process.execPath, "--eval", script],
     cwd,
@@ -68,6 +78,7 @@ function runScript(tempDir: string, script: string): string {
       COPILOT_API_HOME: tempDir,
       COPILOT_API_OAUTH_APP: "",
       COPILOT_API_ENTERPRISE_URL: "",
+      ...env,
     },
   })
 
@@ -189,6 +200,43 @@ describe("provider resolver", () => {
       enabled: false,
       authType: "oauth2",
       baseUrl: "https://chatgpt.com/backend-api",
+    })
+  })
+
+  test("resolves cloudgpt azure-cli auth to a fresh bearer token", () => {
+    const tempDir = createTempDir()
+    const binDir = path.join(tempDir, "bin")
+    fs.mkdirSync(binDir)
+    fs.writeFileSync(
+      path.join(binDir, "az"),
+      `#!/usr/bin/env sh
+printf '%s\\n' '{"accessToken":"cloudgpt-access-token","expires_on":1783398547,"tenant":"72f988bf-86f1-41af-91ab-2d7cd011db47","tokenType":"Bearer"}'
+`,
+      { encoding: "utf8", mode: 0o755 },
+    )
+    writeConfigFile(tempDir, {
+      providers: {
+        cloudgpt: {
+          type: "openai-compatible",
+          enabled: true,
+          authType: "azure-cli",
+          baseUrl: "https://cloudgpt-openai.azure-api.net/openai",
+        },
+      },
+    })
+
+    const output = runScript(
+      tempDir,
+      'const { resolveProviderConfig } = await import("./src/lib/provider-resolver"); console.log(JSON.stringify(await resolveProviderConfig("cloudgpt")));',
+      { PATH: `${binDir}:${process.env.PATH ?? ""}` },
+    )
+
+    expect(JSON.parse(output)).toMatchObject({
+      apiKey: "cloudgpt-access-token",
+      authType: "authorization",
+      baseUrl: "https://cloudgpt-openai.azure-api.net/openai",
+      name: "cloudgpt",
+      type: "openai-compatible",
     })
   })
 })

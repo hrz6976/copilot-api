@@ -637,4 +637,132 @@ describe("OpenAI usage-only stream translation", () => {
     })
     expect(translatedStream.at(-1)).toEqual({ type: "message_stop" })
   })
+
+  test("should emit message_stop when an OpenAI stream ends without finish reason", () => {
+    const openAIStream: Array<ChatCompletionChunk> = [
+      {
+        id: "cmpl-no-finish",
+        object: "chat.completion.chunk",
+        created: 1677652288,
+        model: "gpt-4.1-mini",
+        choices: [
+          {
+            index: 0,
+            delta: { role: "assistant" },
+            finish_reason: null,
+            logprobs: null,
+          },
+        ],
+      },
+      {
+        id: "cmpl-no-finish",
+        object: "chat.completion.chunk",
+        created: 1677652288,
+        model: "gpt-4.1-mini",
+        choices: [
+          {
+            index: 0,
+            delta: { content: "done" },
+            finish_reason: null,
+            logprobs: null,
+          },
+        ],
+      },
+    ]
+
+    const streamState: AnthropicStreamState = {
+      messageStartSent: false,
+      contentBlockIndex: 0,
+      contentBlockOpen: false,
+      toolCalls: {},
+      thinkingBlockOpen: false,
+    }
+    const translatedStream = openAIStream.flatMap((chunk) =>
+      translateChunkToAnthropicEvents(chunk, streamState),
+    )
+    translatedStream.push(...flushPendingAnthropicStreamEvents(streamState))
+
+    expect(translatedStream.map((event) => event.type)).toEqual([
+      "message_start",
+      "content_block_start",
+      "content_block_delta",
+      "content_block_stop",
+      "message_delta",
+      "message_stop",
+    ])
+    expect(translatedStream.at(-2)).toEqual({
+      type: "message_delta",
+      delta: {
+        stop_reason: "end_turn",
+        stop_sequence: null,
+      },
+    })
+  })
+
+  test("should handle terminal OpenAI chunks without delta", () => {
+    const openAIStream = [
+      {
+        id: "cmpl-missing-delta",
+        object: "chat.completion.chunk",
+        created: 1677652288,
+        model: "gpt-4.1-mini",
+        choices: [
+          {
+            index: 0,
+            delta: { role: "assistant" },
+            finish_reason: null,
+            logprobs: null,
+          },
+        ],
+      },
+      {
+        id: "cmpl-missing-delta",
+        object: "chat.completion.chunk",
+        created: 1677652288,
+        model: "gpt-4.1-mini",
+        choices: [
+          {
+            index: 0,
+            delta: { content: "done" },
+            finish_reason: null,
+            logprobs: null,
+          },
+        ],
+      },
+      {
+        id: "cmpl-missing-delta",
+        object: "chat.completion.chunk",
+        created: 1677652288,
+        model: "gpt-4.1-mini",
+        choices: [
+          {
+            index: 0,
+            finish_reason: "stop",
+            logprobs: null,
+          },
+        ],
+      },
+    ] as unknown as Array<ChatCompletionChunk>
+
+    const streamState: AnthropicStreamState = {
+      messageStartSent: false,
+      contentBlockIndex: 0,
+      contentBlockOpen: false,
+      toolCalls: {},
+      thinkingBlockOpen: false,
+    }
+    const translatedStream = openAIStream.flatMap((chunk) =>
+      translateChunkToAnthropicEvents(chunk, streamState),
+    )
+    translatedStream.push(...flushPendingAnthropicStreamEvents(streamState))
+
+    expect(translatedStream.map((event) => event.type)).toEqual([
+      "message_start",
+      "content_block_start",
+      "content_block_delta",
+      "content_block_stop",
+      "message_delta",
+      "message_stop",
+    ])
+  })
 })
