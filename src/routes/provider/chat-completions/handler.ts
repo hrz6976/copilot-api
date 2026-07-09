@@ -219,12 +219,17 @@ const handleOpenAIResponsesProviderChatCompletions = async (
     providerConfig.name === "codex" ?
       getCodexModels().data.find((model) => model.id === responsesPayload.model)
     : undefined
-  applyResponsesApiContextManagement(
+  const shouldCompactInput = applyResponsesApiContextManagement(
     responsesPayload,
-    model?.capabilities.limits.max_prompt_tokens ?? 0,
-    0.8,
+    model?.capabilities.limits.max_prompt_tokens,
+    {
+      compactThresholdRatio: 0.8,
+      source: "responses",
+    },
   )
-  compactInputByLatestCompaction(responsesPayload)
+  if (shouldCompactInput) {
+    compactInputByLatestCompaction(responsesPayload)
+  }
 
   debugJson(logger, "provider.chat_completions.responses.request", {
     payload: responsesPayload,
