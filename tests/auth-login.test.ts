@@ -285,7 +285,7 @@ describe("auth login validation", () => {
       `
       const consolaModule = await import("consola");
       const consola = consolaModule.default ?? consolaModule;
-      const answers = ["__default__", ""];
+      const answers = [""];
       consola.prompt = async () => answers.shift();
       consola.info = () => {};
       consola.success = () => {};
@@ -312,7 +312,7 @@ describe("auth login validation", () => {
       `
       const consolaModule = await import("consola");
       const consola = consolaModule.default ?? consolaModule;
-      const answers = ["__default__", ""];
+      const answers = [""];
       const infoMessages = [];
       consola.prompt = async () => answers.shift();
       consola.info = (message) => infoMessages.push(String(message));
@@ -333,9 +333,12 @@ describe("auth login validation", () => {
     expect(infoMessages).toContain(
       "The proxy will request and refresh CloudGPT AAD tokens automatically.",
     )
+    expect(infoMessages).toContain(
+      "Chat Completions and Responses endpoints are routed per model from the builtin CloudGPT catalog.",
+    )
   })
 
-  test("configures cloudgpt with custom quick provider type and baseUrl", () => {
+  test("configures cloudgpt with a custom baseUrl without prompting for type", () => {
     const tempDir = createTempDir()
     writeConfigFile(tempDir, {})
 
@@ -344,7 +347,7 @@ describe("auth login validation", () => {
       `
       const consolaModule = await import("consola");
       const consola = consolaModule.default ?? consolaModule;
-      const answers = ["openai-responses", "https://cloudgpt.example/openai///"];
+      const answers = ["https://cloudgpt.example/openai///"];
       consola.prompt = async () => answers.shift();
       consola.info = () => {};
       consola.success = () => {};
@@ -358,7 +361,7 @@ describe("auth login validation", () => {
       baseUrl: "https://cloudgpt.example/openai",
       enabled: true,
       pricingCurrency: "USD",
-      type: "openai-responses",
+      type: "openai-compatible",
     })
   })
 

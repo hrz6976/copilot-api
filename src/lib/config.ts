@@ -2,6 +2,11 @@ import consola from "consola"
 import { randomBytes } from "node:crypto"
 import fs from "node:fs"
 
+import {
+  type CloudGptChatProviderType,
+  getCloudGptModelProviderType,
+} from "~/services/cloudgpt/get-models"
+
 import { PATHS } from "./paths"
 
 export interface AppConfig {
@@ -712,11 +717,25 @@ export function getProviderConfig(name: string): ResolvedProviderConfig | null {
 export function resolveEffectiveProviderType(
   providerConfig: ResolvedProviderConfig,
   model: string,
+  preferredBuiltinTypes?: Array<CloudGptChatProviderType>,
 ): ProviderType {
   const modelConfig = providerConfig.models?.[model]
   if (modelConfig?.type && isSupportedProviderType(modelConfig.type)) {
     return modelConfig.type
   }
+
+  // The builtin CloudGPT catalog knows which endpoints each model supports,
+  // so per-model routing does not need explicit config
+  if (providerConfig.name === "cloudgpt") {
+    const catalogType = getCloudGptModelProviderType(
+      model,
+      preferredBuiltinTypes,
+    )
+    if (catalogType) {
+      return catalogType
+    }
+  }
+
   return providerConfig.type
 }
 
@@ -725,8 +744,13 @@ export function resolveEffectiveProviderType(
 export function resolveEffectiveProviderConfig(
   providerConfig: ResolvedProviderConfig,
   model: string,
+  preferredBuiltinTypes?: Array<CloudGptChatProviderType>,
 ): ResolvedProviderConfig {
-  const effectiveType = resolveEffectiveProviderType(providerConfig, model)
+  const effectiveType = resolveEffectiveProviderType(
+    providerConfig,
+    model,
+    preferredBuiltinTypes,
+  )
   if (effectiveType === providerConfig.type) {
     return providerConfig
   }

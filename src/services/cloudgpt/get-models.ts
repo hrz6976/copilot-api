@@ -1108,3 +1108,39 @@ export function getModels(): ModelsResponse {
     data: CLOUDGPT_MODEL_CATALOG.map((model) => normalizeCloudGptModel(model)),
   }
 }
+
+export type CloudGptChatProviderType = "openai-compatible" | "openai-responses"
+
+const CLOUDGPT_ENDPOINT_BY_PROVIDER_TYPE: Record<
+  CloudGptChatProviderType,
+  string
+> = {
+  "openai-compatible": CHAT_COMPLETIONS_ENDPOINT,
+  "openai-responses": RESPONSES_ENDPOINT,
+}
+
+// Resolves how a CloudGPT chat model should be reached, based on the
+// endpoints it supports in cloudgpt_aoai.py. `preferredTypes` lets callers
+// favor their native protocol when a model supports both.
+export function getCloudGptModelProviderType(
+  modelId: string,
+  preferredTypes: Array<CloudGptChatProviderType> = [
+    "openai-compatible",
+    "openai-responses",
+  ],
+): CloudGptChatProviderType | undefined {
+  const model = CLOUDGPT_MODEL_CATALOG.find((entry) => entry.id === modelId)
+  if (!model || model.kind !== "chat") {
+    return undefined
+  }
+
+  for (const providerType of preferredTypes) {
+    if (
+      model.endpoints.includes(CLOUDGPT_ENDPOINT_BY_PROVIDER_TYPE[providerType])
+    ) {
+      return providerType
+    }
+  }
+
+  return undefined
+}

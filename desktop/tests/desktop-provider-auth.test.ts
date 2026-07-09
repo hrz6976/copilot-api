@@ -188,7 +188,7 @@ describe('desktop provider auth', () => {
     })
   })
 
-  test('configures cloudgpt with an editable provider type', () => {
+  test('ignores a requested provider type for cloudgpt', () => {
     let writtenProviderConfig: ProviderConfig | undefined
 
     configureDesktopProvider(
@@ -212,7 +212,7 @@ describe('desktop provider auth', () => {
       baseUrl: 'https://cloudgpt.example/openai',
       enabled: true,
       pricingCurrency: 'USD',
-      type: 'openai-responses',
+      type: 'openai-compatible',
     })
   })
 

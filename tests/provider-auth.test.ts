@@ -145,3 +145,67 @@ describe("resolveEffectiveProviderConfig", () => {
     )
   })
 })
+
+describe("resolveEffectiveProviderConfig cloudgpt catalog routing", () => {
+  const cloudgptConfig = (
+    overrides: Partial<ResolvedProviderConfig> = {},
+  ): ResolvedProviderConfig =>
+    createProviderConfig({
+      name: "cloudgpt",
+      type: "openai-compatible",
+      authType: "authorization",
+      ...overrides,
+    })
+
+  test("responses-only models resolve to openai-responses automatically", () => {
+    const effective = resolveEffectiveProviderConfig(
+      cloudgptConfig(),
+      "gpt-5.4-pro-20260305",
+    )
+    expect(effective.type).toBe("openai-responses")
+  })
+
+  test("chat-capable models follow the caller's protocol preference", () => {
+    const chatFirst = resolveEffectiveProviderConfig(
+      cloudgptConfig(),
+      "gpt-4.1-mini-20250414",
+    )
+    expect(chatFirst.type).toBe("openai-compatible")
+
+    const responsesFirst = resolveEffectiveProviderConfig(
+      cloudgptConfig(),
+      "gpt-4.1-mini-20250414",
+      ["openai-responses", "openai-compatible"],
+    )
+    expect(responsesFirst.type).toBe("openai-responses")
+  })
+
+  test("chat-only models stay openai-compatible even when responses is preferred", () => {
+    const effective = resolveEffectiveProviderConfig(
+      cloudgptConfig(),
+      "DeepSeek-V3.2",
+      ["openai-responses", "openai-compatible"],
+    )
+    expect(effective.type).toBe("openai-compatible")
+  })
+
+  test("explicit per-model config overrides the catalog", () => {
+    const effective = resolveEffectiveProviderConfig(
+      cloudgptConfig({
+        models: { "gpt-4.1-mini-20250414": { type: "openai-responses" } },
+      }),
+      "gpt-4.1-mini-20250414",
+    )
+    expect(effective.type).toBe("openai-responses")
+  })
+
+  test("non-chat and unknown models fall back to the provider type", () => {
+    expect(
+      resolveEffectiveProviderConfig(cloudgptConfig(), "text-embedding-3-large")
+        .type,
+    ).toBe("openai-compatible")
+    expect(
+      resolveEffectiveProviderConfig(cloudgptConfig(), "no-such-model").type,
+    ).toBe("openai-compatible")
+  })
+})

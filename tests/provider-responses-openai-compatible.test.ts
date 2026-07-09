@@ -445,4 +445,50 @@ describe("provider responses backed by OpenAI-compatible chat completions", () =
     expect(text).toContain("event: error")
     expect(text).not.toContain("event: response.completed")
   })
+
+  test("responses-only catalog models are forwarded natively, not via chat", async () => {
+    fetchMock.mockImplementationOnce(
+      (_url: string | URL | Request, _init?: RequestInit) =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: "resp_native",
+              object: "response",
+              created_at: 0,
+              model: "gpt-5.4-pro-20260305",
+              output: [],
+              output_text: "",
+              status: "completed",
+              usage: null,
+              error: null,
+              incomplete_details: null,
+              instructions: null,
+              metadata: null,
+              parallel_tool_calls: true,
+              temperature: null,
+              tool_choice: "auto",
+              tools: [],
+              top_p: null,
+            }),
+            { headers: { "content-type": "application/json" } },
+          ),
+        ),
+    )
+
+    const response = await createApp().request("/v1/responses", {
+      body: JSON.stringify({
+        model: "cloudgpt/gpt-5.4-pro-20260305",
+        input: "hello",
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url] = fetchMock.mock.calls[0]
+    expect(url).toBe("https://provider.example/openai/v1/responses")
+  })
 })

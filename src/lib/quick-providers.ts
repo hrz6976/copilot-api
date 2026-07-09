@@ -32,7 +32,9 @@ export const QUICK_PROVIDER_CONFIGS = {
     type: "openai-compatible",
     baseUrl: "https://cloudgpt-openai.azure-api.net/openai",
     pricingCurrency: "USD",
-    editableType: true,
+    // Endpoint routing is resolved per model from the builtin catalog, so
+    // there is no single provider type to choose
+    editableType: false,
     authType: "azure-cli",
     requiresApiKey: false,
   },

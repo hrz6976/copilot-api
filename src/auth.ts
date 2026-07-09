@@ -406,6 +406,9 @@ function logQuickProviderOnboarding(providerName: QuickProviderName): void {
   consola.info(
     "The proxy will request and refresh CloudGPT AAD tokens automatically.",
   )
+  consola.info(
+    "Chat Completions and Responses endpoints are routed per model from the builtin CloudGPT catalog.",
+  )
 }
 
 async function configureCustomProvider(): Promise<void> {

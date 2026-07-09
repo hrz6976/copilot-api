@@ -67,7 +67,7 @@ const QUICK_PROVIDER_DEFAULTS: Record<
   },
   cloudgpt: {
     baseUrl: 'https://cloudgpt-openai.azure-api.net/openai',
-    editableType: true,
+    editableType: false,
     requiresApiKey: false,
     type: 'openai-compatible',
   },

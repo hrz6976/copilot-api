@@ -86,6 +86,9 @@ export async function handleProviderResponsesForProvider(
   const effectiveProviderConfig = resolveEffectiveProviderConfig(
     providerConfig,
     payload.model,
+    // Serve /v1/responses natively when the model supports it, falling back
+    // to Chat Completions translation for chat-only models
+    ["openai-responses", "openai-compatible"],
   )
   const effectiveType = effectiveProviderConfig.type
   const modelConfig = providerConfig.models?.[payload.model]

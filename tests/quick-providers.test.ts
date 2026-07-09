@@ -25,7 +25,7 @@ describe("quick provider configs", () => {
     expect(QUICK_PROVIDER_CONFIGS.cloudgpt).toEqual({
       authType: "azure-cli",
       baseUrl: "https://cloudgpt-openai.azure-api.net/openai",
-      editableType: true,
+      editableType: false,
       pricingCurrency: "USD",
       requiresApiKey: false,
       type: "openai-compatible",
