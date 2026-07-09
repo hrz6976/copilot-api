@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@jeffreycao/copilot-api",
+  "name": "@hrz6976/copilot-api",
   "version": "1.13.19",
   "description": "OpenAI and Anthropic-compatible gateway for GitHub Copilot or Codex or third-party providers.",
   "keywords": [
@@ -9,11 +9,11 @@
     "ai-gateway",
     "multi-provider"
   ],
-  "homepage": "https://github.com/caozhiyuan/copilot-api",
-  "bugs": "https://github.com/caozhiyuan/copilot-api/issues",
+  "homepage": "https://github.com/hrz6976/copilot-api",
+  "bugs": "https://github.com/hrz6976/copilot-api/issues",
   "repository": {
     "type": "git",
-    "url": "https://github.com/caozhiyuan/copilot-api"
+    "url": "https://github.com/hrz6976/copilot-api"
   },
   "license": "MIT",
   "author": "caozhiyuan",
