@@ -14,7 +14,11 @@ import {
   shouldShowCopilotQuotaUsage,
   shouldShowCopilotUsageSummary,
 } from '../lib/copilot-usage-display'
-import { formatTokenCost, formatTokenCosts } from '../lib/token-usage-format'
+import {
+  formatTokenCost,
+  formatTokenCosts,
+  tokenUsageModelLabel,
+} from '../lib/token-usage-format'
 import ModelMappingsPage from './ModelMappingsPage'
 import type {
   DesktopAuthMode,
@@ -1183,9 +1187,9 @@ function TokenUsagePanel({
   ]
   const trendModels = dailyUsage?.byModel ?? tokenUsage?.byModel ?? []
   const selectedTrendModel =
-    trendModels.some((model) => model.model === trendModel) ? trendModel : (
-      ALL_MODELS_VALUE
-    )
+    trendModels.some((model) => tokenUsageModelLabel(model) === trendModel) ?
+      trendModel
+    : ALL_MODELS_VALUE
   const hasModelRows = Boolean(tokenUsage && tokenUsage.byModel.length > 0)
   const hasEventRows = Boolean(eventsPage && eventsPage.items.length > 0)
 
@@ -1325,7 +1329,10 @@ function TokenUsagePanel({
                 </thead>
                 <tbody>
                   {tokenUsage.byModel.map((model) => (
-                    <TokenUsageModelRow key={model.model} model={model} />
+                    <TokenUsageModelRow
+                      key={tokenUsageModelLabel(model)}
+                      model={model}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -1455,7 +1462,7 @@ function getTrendTotals(
 ): TokenUsageTotals {
   if (selectedModel === ALL_MODELS_VALUE) return day.totals
   return (
-    day.byModel.find((model) => model.model === selectedModel)
+    day.byModel.find((model) => tokenUsageModelLabel(model) === selectedModel)
     ?? EMPTY_TOKEN_USAGE_TOTALS
   )
 }
@@ -1578,8 +1585,11 @@ function TokenUsageTrendChart({
             {t('dashboard.tokenUsageAllModels')}
           </option>
           {models.map((model) => (
-            <option key={model.model} value={model.model}>
-              {model.model}
+            <option
+              key={tokenUsageModelLabel(model)}
+              value={tokenUsageModelLabel(model)}
+            >
+              {tokenUsageModelLabel(model)}
             </option>
           ))}
         </select>
@@ -1766,9 +1776,9 @@ function TokenUsageModelRow({ model }: { model: TokenUsageModelSummary }) {
     <tr className="border-b border-line-soft last:border-b-0">
       <td
         className="max-w-[260px] truncate px-2.5 py-1.5 text-ink"
-        title={model.model}
+        title={tokenUsageModelLabel(model)}
       >
-        {model.model}
+        {tokenUsageModelLabel(model)}
       </td>
       <td className="px-2.5 py-1.5 text-right text-ink-soft">
         {formatTokenCount(model.request_count)}
@@ -1814,9 +1824,9 @@ function TokenUsageEventRow({ event }: { event: TokenUsageEventRecord }) {
       </td>
       <td
         className="max-w-[180px] truncate px-2.5 py-1.5 text-ink"
-        title={event.model}
+        title={tokenUsageModelLabel(event)}
       >
-        {event.model}
+        {tokenUsageModelLabel(event)}
       </td>
       <td
         className="max-w-[160px] truncate px-2.5 py-1.5 font-mono text-ink-soft"

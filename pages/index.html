@@ -102,7 +102,8 @@
         grid-template-columns:
           minmax(320px, 1fr)
           minmax(220px, 320px)
-          150px
+          130px
+          130px
           132px;
         gap: 12px;
         align-items: end;
@@ -354,7 +355,7 @@
 
       @media (max-width: 1100px) {
         .control-surface {
-          grid-template-columns: minmax(0, 1fr) 170px 132px;
+          grid-template-columns: minmax(0, 1fr) 130px 130px 132px;
         }
 
         .endpoint-field {
@@ -428,11 +429,29 @@
                 <option value="month">Month</option>
               </select>
             </div>
+            <div>
+              <label for="auto-refresh-interval" class="field-label">Auto Refresh</label>
+              <select
+                id="auto-refresh-interval"
+                class="select-control input-focus"
+              >
+                <option value="0">Off</option>
+                <option value="10000">10s</option>
+                <option value="30000">30s</option>
+                <option value="60000">1m</option>
+                <option value="300000">5m</option>
+              </select>
+            </div>
             <button id="fetch-button" type="submit" class="primary-action">
               <i data-lucide="refresh-cw" class="h-4 w-4"></i>
               <span>Refresh</span>
             </button>
           </form>
+          <p
+            id="refresh-status"
+            class="page-subtitle"
+            style="margin-top: 8px; min-height: 18px;"
+          ></p>
         </header>
 
         <main id="content-area" class="content-area"></main>
@@ -447,6 +466,10 @@
         const tokenUsagePeriodSelect = document.getElementById(
           "token-usage-period"
         );
+        const autoRefreshSelect = document.getElementById(
+          "auto-refresh-interval"
+        );
+        const refreshStatus = document.getElementById("refresh-status");
         const contentArea = document.getElementById("content-area");
         const fetchButton = document.getElementById("fetch-button");
         const fetchButtonLabel = fetchButton.querySelector("span");
@@ -465,6 +488,14 @@
         const ALL_METRICS_VALUE = "__all__";
         const ALL_MODELS_VALUE = "__all__";
         const API_KEY_STORAGE_KEY = "copilot-api.usage-viewer.x-api-key";
+        const AUTO_REFRESH_STORAGE_KEY =
+          "copilot-api.usage-viewer.auto-refresh-ms";
+        const AUTO_REFRESH_LABELS = {
+          10000: "10s",
+          30000: "30s",
+          60000: "1m",
+          300000: "5m",
+        };
         const VALID_PERIODS = new Set(["day", "week", "month"]);
         const EMPTY_TOKEN_USAGE_TOTALS = {
           cache_creation_input_tokens: 0,
@@ -482,6 +513,9 @@
           isLoading: false,
           isTokenUsageLoading: false,
           isEventsLoading: false,
+          isBackgroundRefreshing: false,
+          hasLoadedOnce: false,
+          lastUpdatedMs: null,
           error: null,
           data: null,
           tokenUsageDailySummary: null,
@@ -564,6 +598,77 @@
             }
           } catch (error) {
             console.warn("Could not store API key:", getErrorMessage(error));
+          }
+        }
+
+        function normalizeAutoRefreshMs(value) {
+          const parsed = Number.parseInt(value, 10);
+          return Object.hasOwn(AUTO_REFRESH_LABELS, parsed) ? parsed : 0;
+        }
+
+        function loadStoredAutoRefreshMs() {
+          try {
+            return normalizeAutoRefreshMs(
+              localStorage.getItem(AUTO_REFRESH_STORAGE_KEY) || "0"
+            );
+          } catch (error) {
+            console.warn(
+              "Could not read stored auto-refresh interval:",
+              getErrorMessage(error)
+            );
+            return 0;
+          }
+        }
+
+        function storeAutoRefreshMs(value) {
+          try {
+            if (value > 0) {
+              localStorage.setItem(AUTO_REFRESH_STORAGE_KEY, String(value));
+            } else {
+              localStorage.removeItem(AUTO_REFRESH_STORAGE_KEY);
+            }
+          } catch (error) {
+            console.warn(
+              "Could not store auto-refresh interval:",
+              getErrorMessage(error)
+            );
+          }
+        }
+
+        function getAutoRefreshMs() {
+          return normalizeAutoRefreshMs(autoRefreshSelect.value);
+        }
+
+        let autoRefreshTimer = null;
+
+        function isAnyFetchInFlight() {
+          return (
+            state.isLoading
+            || state.isTokenUsageLoading
+            || state.isEventsLoading
+            || state.isBackgroundRefreshing
+          );
+        }
+
+        function runAutoRefresh() {
+          if (document.hidden || !state.hasLoadedOnce || isAnyFetchInFlight()) {
+            return;
+          }
+          void fetchData({
+            page: state.tokenUsageEventsPage?.page ?? 1,
+            silent: true,
+          });
+        }
+
+        function scheduleAutoRefresh() {
+          if (autoRefreshTimer !== null) {
+            clearInterval(autoRefreshTimer);
+            autoRefreshTimer = null;
+          }
+
+          const intervalMs = getAutoRefreshMs();
+          if (intervalMs > 0) {
+            autoRefreshTimer = setInterval(runAutoRefresh, intervalMs);
           }
         }
 
@@ -686,6 +791,27 @@
             : "Refresh";
           tokenUsagePeriodSelect.disabled =
             state.isLoading || state.isTokenUsageLoading;
+          updateRefreshStatus();
+        }
+
+        function updateRefreshStatus() {
+          const parts = [];
+          if (state.isBackgroundRefreshing) {
+            parts.push("Auto-refreshing...");
+          } else if (Number.isFinite(state.lastUpdatedMs)) {
+            parts.push(
+              `Last updated ${new Date(state.lastUpdatedMs).toLocaleTimeString()}`
+            );
+          }
+
+          const intervalMs = getAutoRefreshMs();
+          if (intervalMs > 0) {
+            parts.push(
+              `Auto-refresh every ${AUTO_REFRESH_LABELS[intervalMs]}`
+            );
+          }
+
+          refreshStatus.textContent = parts.join(" · ");
         }
 
         function formatNumber(value) {
@@ -745,6 +871,15 @@
 
           const trimmed = value.trim();
           return trimmed || "—";
+        }
+
+        function tokenUsageModelLabel(entry) {
+          if (!entry) {
+            return "unknown";
+          }
+          return entry.provider_name
+            ? `${entry.provider_name}/${entry.model}`
+            : entry.model;
         }
 
         function renderTokenUsageRangeText(period, range) {
@@ -1154,8 +1289,9 @@
           }
 
           return (
-            day.byModel?.find((model) => model.model === selectedModel)
-            || EMPTY_TOKEN_USAGE_TOTALS
+            day.byModel?.find(
+              (model) => tokenUsageModelLabel(model) === selectedModel
+            ) || EMPTY_TOKEN_USAGE_TOTALS
           );
         }
 
@@ -1171,18 +1307,18 @@
 
           const models = dailySummary?.byModel || [];
           const selectedModel = models.some(
-            (model) => model.model === state.tokenUsageTrendModel
+            (model) => tokenUsageModelLabel(model) === state.tokenUsageTrendModel
           )
             ? state.tokenUsageTrendModel
             : ALL_MODELS_VALUE;
           const options = [
             `<option value="${ALL_MODELS_VALUE}">All models</option>`,
-            ...models.map(
-              (model) =>
-                `<option value="${escapeHtml(model.model)}" ${
-                  selectedModel === model.model ? "selected" : ""
-                }>${escapeHtml(model.model)}</option>`
-            ),
+            ...models.map((model) => {
+              const label = tokenUsageModelLabel(model);
+              return `<option value="${escapeHtml(label)}" ${
+                selectedModel === label ? "selected" : ""
+              }>${escapeHtml(label)}</option>`;
+            }),
           ].join("");
 
           return `
@@ -1516,11 +1652,12 @@
 
           const rows = summary.byModel
             .map((model) => {
+              const modelLabel = tokenUsageModelLabel(model);
               return `
                 <tr class="border-b last:border-b-0" style="border-color: var(--color-bg-light-1);">
                   <td class="px-4 py-2 max-w-[280px] truncate" style="color: var(--color-fg-lightest);" title="${escapeHtml(
-                    model.model
-                  )}">${escapeHtml(model.model)}</td>
+                    modelLabel
+                  )}">${escapeHtml(modelLabel)}</td>
                   <td class="px-4 py-2 text-right" style="color: var(--color-fg-dark);">${formatNumber(
                     model.request_count
                   )}</td>
@@ -1584,6 +1721,7 @@
               const userId = formatCellText(event.user_id);
               const sessionId = formatCellText(event.session_id);
               const traceId = formatCellText(event.trace_id);
+              const modelLabel = tokenUsageModelLabel(event);
 
               return `
                 <tr class="border-b last:border-b-0" style="border-color: var(--color-bg-light-1);">
@@ -1595,8 +1733,8 @@
                   )}">${escapeHtml(userId)}</td>
 
                   <td class="px-4 py-2 max-w-[140px] truncate" style="color: var(--color-fg-lightest);" title="${escapeHtml(
-                    event.model
-                  )}">${escapeHtml(event.model)}</td>
+                    modelLabel
+                  )}">${escapeHtml(modelLabel)}</td>
                   <td class="px-4 py-2 max-w-[180px] truncate font-mono" style="color: var(--color-fg-dark);" title="${escapeHtml(
                     sessionId
                   )}">${escapeHtml(sessionId)}</td>
@@ -1728,8 +1866,11 @@
 
         /**
          * Fetches usage data and token usage data from the specified API endpoint.
+         * With `silent: true` the current content stays visible while data
+         * refreshes in the background (used by auto-refresh).
          */
-        async function fetchData(page = 1) {
+        async function fetchData(options = {}) {
+          const { page = 1, silent = false } = options;
           const endpoint = endpointUrlInput.value.trim();
           if (!endpoint) {
             state.data = null;
@@ -1747,12 +1888,17 @@
           }
 
           const period = getSelectedPeriod();
-          state.isLoading = true;
           state.error = null;
           state.tokenUsageDailyError = null;
           state.tokenUsageSummaryError = null;
           state.tokenUsageEventsError = null;
-          render();
+          if (silent) {
+            state.isBackgroundRefreshing = true;
+            updateControls();
+          } else {
+            state.isLoading = true;
+            render();
+          }
 
           try {
             const usageUrl = resolveUsageUrl(endpoint);
@@ -1824,6 +1970,9 @@
             state.tokenUsageEventsError = getErrorMessage(error);
           } finally {
             state.isLoading = false;
+            state.isBackgroundRefreshing = false;
+            state.hasLoadedOnce = true;
+            state.lastUpdatedMs = Date.now();
             render();
           }
         }
@@ -1913,6 +2062,8 @@
             state.tokenUsageEventsError = getErrorMessage(error);
           } finally {
             state.isTokenUsageLoading = false;
+            state.hasLoadedOnce = true;
+            state.lastUpdatedMs = Date.now();
             render();
           }
         }
@@ -1965,6 +2116,26 @@
         function handlePeriodChange() {
           syncUrlState();
           void fetchTokenUsageSummaryAndEvents(1);
+        }
+
+        function handleAutoRefreshChange() {
+          storeAutoRefreshMs(getAutoRefreshMs());
+          scheduleAutoRefresh();
+          updateControls();
+        }
+
+        function handleVisibilityChange() {
+          if (document.hidden) {
+            return;
+          }
+
+          const intervalMs = getAutoRefreshMs();
+          const isStale =
+            Number.isFinite(state.lastUpdatedMs)
+            && Date.now() - state.lastUpdatedMs >= intervalMs;
+          if (intervalMs > 0 && isStale) {
+            runAutoRefresh();
+          }
         }
 
         function handleContentAreaClick(event) {
@@ -2036,6 +2207,8 @@
         function init() {
           endpointForm.addEventListener("submit", handleFormSubmit);
           tokenUsagePeriodSelect.addEventListener("change", handlePeriodChange);
+          autoRefreshSelect.addEventListener("change", handleAutoRefreshChange);
+          document.addEventListener("visibilitychange", handleVisibilityChange);
           apiKeyInput.addEventListener("input", () => {
             storeApiKey(apiKeyInput.value);
           });
@@ -2043,6 +2216,8 @@
           contentArea.addEventListener("change", handleContentAreaChange);
 
           apiKeyInput.value = loadStoredApiKey();
+          autoRefreshSelect.value = String(loadStoredAutoRefreshMs());
+          scheduleAutoRefresh();
 
           const urlParams = new URLSearchParams(window.location.search);
           const periodFromUrl = normalizePeriod(urlParams.get("period"));

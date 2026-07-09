@@ -73,6 +73,7 @@ export interface TokenUsageTotals {
 
 export interface TokenUsageModelSummary extends TokenUsageTotals {
   model: string
+  provider_name: string | null
 }
 
 export interface TokenUsageEventRecord {
@@ -632,6 +633,7 @@ function modelSummaryFromRow(
   return {
     ...totalsFromRow(row, costs),
     model: typeof row.model === "string" ? row.model : "unknown",
+    provider_name: nullableStringFromRow(row, "provider_name"),
   }
 }
 
@@ -705,6 +707,7 @@ function getModelRows(
     .prepare(
       `
     SELECT
+      provider_name,
       model,
       COUNT(*) AS request_count,
       COALESCE(SUM(input_tokens), 0) AS input_tokens,
@@ -715,10 +718,11 @@ function getModelRows(
       COALESCE(SUM(total_tokens), 0) AS total_tokens
     FROM token_usage_events
     WHERE created_at_ms >= ? AND created_at_ms < ?
-    GROUP BY model
+    GROUP BY provider_name, model
     ORDER BY
       total_tokens DESC,
-      model ASC
+      model ASC,
+      provider_name ASC
   `,
     )
     .all(range.startMs, range.endMs) as Array<Record<string, unknown>>
@@ -752,6 +756,12 @@ function getCostRows(
   })
 }
 
+function providerModelKey(row: Record<string, unknown>): string {
+  const provider = nullableStringFromRow(row, "provider_name") ?? ""
+  const model = stringFromRow(row, "model") || "unknown"
+  return `${provider}\u0000${model}`
+}
+
 function getModelCostMap(
   db: SqliteDatabase,
   range: { endMs: number; startMs: number },
@@ -760,6 +770,7 @@ function getModelCostMap(
     .prepare(
       `
     SELECT
+      provider_name,
       model,
       cost_currency,
       COALESCE(SUM(total_cost_nanos), 0) AS total_cost_nanos
@@ -769,20 +780,20 @@ function getModelCostMap(
       AND created_at_ms < ?
       AND cost_currency IS NOT NULL
       AND total_cost_nanos IS NOT NULL
-    GROUP BY model, cost_currency
-    ORDER BY model ASC, cost_currency ASC
+    GROUP BY provider_name, model, cost_currency
+    ORDER BY provider_name ASC, model ASC, cost_currency ASC
   `,
     )
     .all(range.startMs, range.endMs) as Array<Record<string, unknown>>
 
   const costMap = new Map<string, Array<TokenUsageCost>>()
   for (const row of rows) {
-    const model = stringFromRow(row, "model") || "unknown"
+    const key = providerModelKey(row)
     const cost = costFromRow(row)
     if (!cost) {
       continue
     }
-    costMap.set(model, [...(costMap.get(model) ?? []), cost])
+    costMap.set(key, [...(costMap.get(key) ?? []), cost])
   }
 
   return costMap
@@ -793,10 +804,9 @@ function getModelSummaries(
   range: { endMs: number; startMs: number },
 ): Array<TokenUsageModelSummary> {
   const costMap = getModelCostMap(db, range)
-  return getModelRows(db, range).map((row) => {
-    const model = stringFromRow(row, "model") || "unknown"
-    return modelSummaryFromRow(row, costMap.get(model) ?? [])
-  })
+  return getModelRows(db, range).map((row) =>
+    modelSummaryFromRow(row, costMap.get(providerModelKey(row)) ?? []),
+  )
 }
 
 function createDailyBucket(

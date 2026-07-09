@@ -22,7 +22,9 @@ export interface AuthStatus extends AuthResult {
 }
 
 export type ProviderType =
-  'anthropic' | 'openai-compatible' | 'openai-responses'
+  | 'anthropic'
+  | 'openai-compatible'
+  | 'openai-responses'
 export type ProviderAuthType = 'authorization' | 'x-api-key'
 export type ProviderAuthTypeInput = ProviderAuthType | '__default__'
 export type QuickProviderName =
@@ -89,6 +91,7 @@ export interface TokenUsageTotals {
 
 export interface TokenUsageModelSummary extends TokenUsageTotals {
   model: string
+  provider_name?: string | null
 }
 
 export interface TokenUsageSummary {

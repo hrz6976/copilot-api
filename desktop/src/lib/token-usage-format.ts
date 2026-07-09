@@ -42,3 +42,12 @@ export function formatTokenCosts(
   if (!costs || costs.length === 0) return ['—']
   return costs.map((cost) => formatTokenCost(cost))
 }
+
+export function tokenUsageModelLabel(entry: {
+  model: string
+  provider_name?: string | null
+}): string {
+  return entry.provider_name ?
+      `${entry.provider_name}/${entry.model}`
+    : entry.model
+}

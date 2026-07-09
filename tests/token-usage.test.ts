@@ -202,6 +202,45 @@ describe("token usage storage", () => {
     ])
   })
 
+  test("splits same-named models by provider in the summary", async () => {
+    recordTokenUsageEvent({
+      endpoint: "chat_completions",
+      input_tokens: 10,
+      model: "gpt-a",
+      output_tokens: 5,
+      source: "copilot",
+      total_nano_aiu: 1000,
+    })
+    recordTokenUsageEvent({
+      endpoint: "chat_completions",
+      input_tokens: 30,
+      model: "gpt-a",
+      output_tokens: 10,
+      providerName: "cloudgpt",
+      source: "provider",
+    })
+
+    const response = await createTokenUsageApp().request(
+      "/token-usage?period=day",
+    )
+    expect(response.status).toBe(200)
+
+    const summary = (await response.json()) as TokenUsageSummary
+    expect(summary.totals.request_count).toBe(2)
+    expect(summary.byModel).toHaveLength(2)
+
+    const copilotRow = summary.byModel.find((row) => row.provider_name === null)
+    const providerRow = summary.byModel.find(
+      (row) => row.provider_name === "cloudgpt",
+    )
+    expect(copilotRow?.model).toBe("gpt-a")
+    expect(copilotRow?.total_tokens).toBe(15)
+    expect(copilotRow?.costs.length).toBeGreaterThan(0)
+    expect(providerRow?.model).toBe("gpt-a")
+    expect(providerRow?.total_tokens).toBe(40)
+    expect(providerRow?.costs).toEqual([])
+  })
+
   test("returns paginated usage events with user id", async () => {
     recordTokenUsageEvent({
       endpoint: "chat_completions",
