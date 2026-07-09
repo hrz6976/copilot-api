@@ -284,6 +284,11 @@ const BUILTIN_PROVIDER_PRICING: Record<
       input: 0.95,
       output: 4,
     },
+    "kimi-k2.7-code": {
+      cachedInput: 0.19,
+      input: 0.95,
+      output: 4,
+    },
     "llama-3.3-70b-instruct": {
       input: 0.71,
       output: 0.71,

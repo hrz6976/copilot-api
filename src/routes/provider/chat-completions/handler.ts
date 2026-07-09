@@ -11,6 +11,7 @@ import {
 import { logCodexRateLimitsEvent } from "~/lib/codex-rate-limit"
 import { applyDashScopePreserveThinkingDefault } from "~/lib/dashscope"
 import {
+  applyGptModelTokenLimitParam,
   applyMissingExtraBody,
   applyProviderContextCache,
   applyProviderStreamOptions,
@@ -151,6 +152,7 @@ const handleOpenAICompatibleProviderChatCompletions = async (
     providerConfig,
   )
   applyProviderContextCache(payload, modelConfig, providerConfig)
+  applyGptModelTokenLimitParam(payload)
 
   debugJson(logger, "provider.chat_completions.request", {
     payload,

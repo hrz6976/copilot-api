@@ -254,6 +254,43 @@ describe("provider responses backed by OpenAI-compatible chat completions", () =
     })
   })
 
+  test("uses max_completion_tokens for GPT-series Responses fallback to chat completions", async () => {
+    providerConfig = {
+      ...(providerConfig as ResolvedProviderConfig),
+      models: {
+        "gpt-5.2-codex": {},
+      },
+    }
+
+    const response = await createApp().request("/v1/responses", {
+      body: JSON.stringify({
+        model: "cloudgpt/gpt-5.2-codex",
+        input: [
+          {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: "hello" }],
+          },
+        ],
+        max_output_tokens: 256,
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    const upstreamBody = JSON.parse(init.body as string) as Record<
+      string,
+      unknown
+    >
+    expect(upstreamBody.model).toBe("gpt-5.2-codex")
+    expect(upstreamBody.max_completion_tokens).toBe(256)
+    expect(upstreamBody).not.toHaveProperty("max_tokens")
+  })
+
   test("translates streaming chat chunks to Responses SSE events", async () => {
     fetchMock.mockImplementationOnce(
       (_url: string | URL | Request, _init?: RequestInit) =>

@@ -20,6 +20,23 @@ describe("token usage pricing", () => {
     })
   })
 
+  test("uses CloudGPT Kimi K2.7 Code built-in cached pricing", () => {
+    const cost = resolveTokenUsageCost({
+      cache_read_input_tokens: 1_000,
+      input_tokens: 1_000,
+      model: "Kimi-K2.7-Code",
+      output_tokens: 1_000,
+      providerName: "CLOUDGPT",
+      source: "provider",
+    })
+
+    expect(cost).toEqual({
+      currency: "USD",
+      source: "builtin",
+      total_cost_nanos: 5_140_000,
+    })
+  })
+
   test("uses CloudGPT high-context pricing tier when input exceeds tier limit", () => {
     const cost = resolveTokenUsageCost({
       cache_read_input_tokens: 100_000,

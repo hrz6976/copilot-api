@@ -199,6 +199,31 @@ describe("provider/model aliases on top-level chat completions route", () => {
     })
   })
 
+  test("uses max_completion_tokens for GPT-series OpenAI-compatible providers", async () => {
+    const app = createApp()
+    const response = await app.request("/v1/chat/completions", {
+      body: JSON.stringify({
+        max_tokens: 512,
+        messages: [{ content: "hello", role: "user" }],
+        model: "dash/gpt-5.2-codex",
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    const upstreamBody = JSON.parse(init.body as string) as Record<
+      string,
+      unknown
+    >
+    expect(upstreamBody.model).toBe("gpt-5.2-codex")
+    expect(upstreamBody.max_completion_tokens).toBe(512)
+    expect(upstreamBody).not.toHaveProperty("max_tokens")
+  })
+
   test("translates chat completions to openai-responses providers", async () => {
     providerConfig = {
       ...(providerConfig as ResolvedProviderConfig),

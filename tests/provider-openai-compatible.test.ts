@@ -236,6 +236,39 @@ describe("openai-compatible provider messages", () => {
     ])
   })
 
+  test("uses max_completion_tokens for GPT-series OpenAI-compatible message translation", async () => {
+    providerConfig = {
+      ...providerConfig,
+      baseUrl: "https://api.example.com/v1",
+      models: {
+        "gpt-5.2-codex": {
+          contextCache: false,
+          toolContentSupportType: [],
+        },
+      },
+      name: "custom",
+    } as ResolvedProviderConfig
+
+    const app = createApp()
+    const response = await app.request("/custom/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        max_tokens: 128,
+        messages: [{ role: "user", content: "hello" }],
+        model: "gpt-5.2-codex",
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    const body = JSON.parse(init.body as string) as Record<string, unknown>
+    expect(body.max_completion_tokens).toBe(128)
+    expect(body).not.toHaveProperty("max_tokens")
+  })
+
   test("adds stream_options include_usage for OpenAI-compatible streams", async () => {
     providerConfig = {
       ...providerConfig,

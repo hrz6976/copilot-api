@@ -6,6 +6,7 @@ import { streamSSE, type SSEMessage } from "hono/streaming"
 import { resolveMappedModel } from "~/lib/config"
 import { createHandlerLogger, debugJson } from "~/lib/logger"
 import { parseProviderModelAlias } from "~/lib/provider-model"
+import { applyGptModelTokenLimitParam } from "~/lib/provider-payload"
 import { state } from "~/lib/state"
 import {
   createCopilotTokenUsageRecorder,
@@ -61,12 +62,7 @@ export async function handleCompletion(c: Context) {
     debugJson(logger, "Set max_tokens to:", payload.max_tokens)
   }
 
-  if (payload.model.includes("gpt")) {
-    if (isNullish(payload.max_completion_tokens)) {
-      payload.max_completion_tokens = payload.max_tokens
-    }
-    delete payload.max_tokens
-  }
+  applyGptModelTokenLimitParam(payload)
 
   // not support subagent marker for now , set sessionId = getUUID(requestId)
   const requestId = generateRequestIdFromPayload(payload)

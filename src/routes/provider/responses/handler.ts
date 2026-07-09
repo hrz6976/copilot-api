@@ -6,6 +6,7 @@ import { streamSSE } from "hono/streaming"
 import { logCodexRateLimitsEvent } from "~/lib/codex-rate-limit"
 import { applyDashScopePreserveThinkingDefault } from "~/lib/dashscope"
 import {
+  applyGptModelTokenLimitParam,
   applyMissingExtraBody,
   applyProviderContextCache,
   applyProviderStreamOptions,
@@ -243,6 +244,7 @@ const handleOpenAICompatibleProviderResponses = async (
     providerConfig,
   )
   applyProviderContextCache(chatPayload, modelConfig, providerConfig)
+  applyGptModelTokenLimitParam(chatPayload)
 
   debugJson(logger, "provider.responses.openai_compatible.request", {
     payload: chatPayload,

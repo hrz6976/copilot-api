@@ -26,7 +26,10 @@ import {
   resolveEffectiveProviderConfig,
 } from "~/lib/config"
 import { logCodexRateLimitsEvent } from "~/lib/codex-rate-limit"
-import { applyMissingExtraBody } from "~/lib/provider-payload"
+import {
+  applyGptModelTokenLimitParam,
+  applyMissingExtraBody,
+} from "~/lib/provider-payload"
 import {
   applyDashScopePreserveThinkingDefault,
   applyOpenAICompatibleContextCache,
@@ -570,6 +573,8 @@ const createOpenAICompatiblePayload = (
   if (contextCacheEnabled) {
     applyOpenAICompatibleContextCache(openAIPayload)
   }
+
+  applyGptModelTokenLimitParam(openAIPayload)
 
   return openAIPayload
 }
