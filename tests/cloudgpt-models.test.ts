@@ -15,11 +15,14 @@ describe("CloudGPT model catalog", () => {
       "o3-deep-research-20250626",
       "DeepSeek-V4-Pro",
       "Kimi-K2.6",
+      "Kimi-K2.7-Code",
       "Llama-4-Maverick-17B-128E-Instruct-FP8",
+      "MAI-Image-2.5",
+      "MAI-Image-2.5-Flash",
       "sora-2-20251006",
     ]
 
-    expect(CLOUDGPT_MODEL_CATALOG).toHaveLength(76)
+    expect(CLOUDGPT_MODEL_CATALOG).toHaveLength(79)
     expect(new Set(modelIds).size).toBe(modelIds.length)
     for (const modelId of expectedModelIds) {
       expect(modelIds).toContain(modelId)
@@ -64,6 +67,22 @@ describe("CloudGPT model catalog", () => {
       },
       model_picker_enabled: false,
       supported_endpoints: ["/v1/images/generations", "/v1/images/edits"],
+    })
+    expect(byId.get("Kimi-K2.7-Code")).toMatchObject({
+      capabilities: {
+        type: "chat",
+      },
+      model_picker_enabled: true,
+      supported_endpoints: ["/v1/chat/completions"],
+      vendor: "moonshot",
+    })
+    expect(byId.get("MAI-Image-2.5")).toMatchObject({
+      capabilities: {
+        type: "image",
+      },
+      model_picker_enabled: false,
+      supported_endpoints: ["/v1/images/generations"],
+      vendor: "microsoft",
     })
   })
 })
