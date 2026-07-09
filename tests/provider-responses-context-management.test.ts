@@ -238,4 +238,102 @@ describe("provider Responses context management", () => {
       },
     ])
   })
+
+  test("forwards a thrown mid-stream error as response.failed + error", async () => {
+    fetchMock.mockImplementationOnce(() => {
+      let stage = 0
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (stage === 0) {
+            stage = 1
+            controller.enqueue(
+              new TextEncoder().encode(
+                [
+                  "event: response.created",
+                  `data: ${JSON.stringify({
+                    type: "response.created",
+                    sequence_number: 0,
+                    response: { id: "resp-1" },
+                  })}`,
+                  "",
+                  "",
+                ].join("\n"),
+              ),
+            )
+            return
+          }
+          controller.error(new Error("provider responses reset"))
+        },
+      })
+      return Promise.resolve(
+        new Response(body, {
+          headers: { "content-type": "text/event-stream" },
+        }),
+      )
+    })
+
+    const app = createApp()
+    const response = await app.request("/v1/responses", {
+      body: JSON.stringify({
+        input: "hello",
+        model: "openai/gpt-test",
+        stream: true,
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    const text = await response.text()
+    expect(text).toContain("event: response.failed")
+    expect(text).toContain("event: error")
+    expect(text).toContain("provider responses reset")
+  })
+
+  test("converts an upstream error event into response.failed + error", async () => {
+    fetchMock.mockImplementationOnce(() =>
+      Promise.resolve(
+        new Response(
+          [
+            "event: response.created",
+            `data: ${JSON.stringify({
+              type: "response.created",
+              sequence_number: 0,
+              response: { id: "resp-1" },
+            })}`,
+            "",
+            "event: error",
+            `data: ${JSON.stringify({
+              type: "error",
+              sequence_number: 1,
+              code: "boom_code",
+              message: "mid-stream provider failure",
+            })}`,
+            "",
+            "",
+          ].join("\n"),
+          {
+            headers: { "content-type": "text/event-stream" },
+          },
+        ),
+      ),
+    )
+
+    const app = createApp()
+    const response = await app.request("/v1/responses", {
+      body: JSON.stringify({
+        input: "hello",
+        model: "openai/gpt-test",
+        stream: true,
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    const text = await response.text()
+    expect(text).toContain("event: response.failed")
+    expect(text).toContain("event: error")
+    expect(text).toContain("mid-stream provider failure")
+  })
 })

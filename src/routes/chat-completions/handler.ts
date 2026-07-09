@@ -4,6 +4,7 @@ import type { Context } from "hono"
 import { streamSSE, type SSEMessage } from "hono/streaming"
 
 import { resolveMappedModel } from "~/lib/config"
+import { getStreamErrorMessage } from "~/lib/error"
 import { createHandlerLogger, debugJson } from "~/lib/logger"
 import { parseProviderModelAlias } from "~/lib/provider-model"
 import { applyGptModelTokenLimitParam } from "~/lib/provider-payload"
@@ -96,21 +97,31 @@ export async function handleCompletion(c: Context) {
   return streamSSE(c, async (stream) => {
     let usage: UsageTokens = {}
 
-    for await (const chunk of response) {
-      debugJson(logger, "Streaming chunk:", chunk)
-      const parsedChunk = parseChatCompletionChunk(chunk)
-      if (parsedChunk?.usage || parsedChunk?.copilot_usage) {
-        usage = {
-          ...normalizeOpenAIUsage(parsedChunk.usage),
-          total_nano_aiu: normalizeOptionalToken(
-            parsedChunk.copilot_usage?.total_nano_aiu,
-          ),
+    try {
+      for await (const chunk of response) {
+        debugJson(logger, "Streaming chunk:", chunk)
+        const parsedChunk = parseChatCompletionChunk(chunk)
+        if (parsedChunk?.usage || parsedChunk?.copilot_usage) {
+          usage = {
+            ...normalizeOpenAIUsage(parsedChunk.usage),
+            total_nano_aiu: normalizeOptionalToken(
+              parsedChunk.copilot_usage?.total_nano_aiu,
+            ),
+          }
         }
+        await stream.writeSSE(chunk as SSEMessage)
       }
-      await stream.writeSSE(chunk as SSEMessage)
+    } catch (error) {
+      const message = getStreamErrorMessage(error)
+      logger.error("Chat completions stream failed:", message)
+      await stream.writeSSE({
+        event: "error",
+        data: JSON.stringify({ error: { message, type: "api_error" } }),
+      })
+      await stream.writeSSE({ data: "[DONE]" })
+    } finally {
+      recordUsage(usage)
     }
-
-    recordUsage(usage)
   })
 }
 

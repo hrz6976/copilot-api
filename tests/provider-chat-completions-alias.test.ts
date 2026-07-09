@@ -224,6 +224,59 @@ describe("provider/model aliases on top-level chat completions route", () => {
     expect(upstreamBody).not.toHaveProperty("max_tokens")
   })
 
+  test("forwards a thrown mid-stream error as an OpenAI chat error event", async () => {
+    fetchMock.mockImplementationOnce(() => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              "data: "
+                + JSON.stringify({
+                  id: "chatcmpl",
+                  object: "chat.completion.chunk",
+                  created: 0,
+                  model: "qwen-plus",
+                  choices: [
+                    {
+                      index: 0,
+                      delta: { role: "assistant", content: "partial" },
+                      finish_reason: null,
+                      logprobs: null,
+                    },
+                  ],
+                })
+                + "\n\n",
+            ),
+          )
+          controller.error(new Error("upstream boom"))
+        },
+      })
+      return Promise.resolve(
+        new Response(body, {
+          headers: { "content-type": "text/event-stream" },
+        }),
+      )
+    })
+
+    const response = await createApp().request("/v1/chat/completions", {
+      body: JSON.stringify({
+        messages: [{ content: "hi", role: "user" }],
+        model: "dash/qwen-plus",
+        stream: true,
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    const text = await response.text()
+    expect(text).toContain("event: error")
+    expect(text).toContain("upstream boom")
+    expect(text).toContain("data: [DONE]")
+  })
+
   test("translates chat completions to openai-responses providers", async () => {
     providerConfig = {
       ...(providerConfig as ResolvedProviderConfig),

@@ -12,6 +12,21 @@ export class HTTPError extends Error {
   }
 }
 
+/**
+ * Extract a human-readable message from a thrown value, for surfacing mid-stream
+ * failures to clients as protocol-appropriate error events.
+ */
+export const getStreamErrorMessage = (
+  error: unknown,
+  fallback = "Upstream stream failed",
+): string => {
+  if (error instanceof Error && error.message) {
+    return error.message
+  }
+  const message = String(error)
+  return message || fallback
+}
+
 export async function forwardError(
   c: Context,
   error: unknown,

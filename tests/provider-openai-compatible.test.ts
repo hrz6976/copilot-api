@@ -269,6 +269,69 @@ describe("openai-compatible provider messages", () => {
     expect(body).not.toHaveProperty("max_tokens")
   })
 
+  test("forwards a thrown mid-stream error as an Anthropic error event", async () => {
+    providerConfig = {
+      ...providerConfig,
+      models: {
+        "qwen-plus": {
+          toolContentSupportType: [],
+        },
+      },
+    } as ResolvedProviderConfig
+
+    fetchMock.mockImplementationOnce(() => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              "data: "
+                + JSON.stringify({
+                  id: "chatcmpl-stream",
+                  object: "chat.completion.chunk",
+                  created: 0,
+                  model: "qwen-plus",
+                  choices: [
+                    {
+                      index: 0,
+                      delta: { role: "assistant", content: "partial" },
+                      finish_reason: null,
+                      logprobs: null,
+                    },
+                  ],
+                })
+                + "\n\n",
+            ),
+          )
+          controller.error(new Error("messages upstream boom"))
+        },
+      })
+      return Promise.resolve(
+        new Response(body, {
+          headers: { "content-type": "text/event-stream" },
+        }),
+      )
+    })
+
+    const app = createApp()
+    const response = await app.request("/dash/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        max_tokens: 128,
+        messages: [{ role: "user", content: "hello" }],
+        model: "qwen-plus",
+        stream: true,
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    const text = await response.text()
+    expect(text).toContain("event: error")
+    expect(text).toContain("messages upstream boom")
+  })
+
   test("adds stream_options include_usage for OpenAI-compatible streams", async () => {
     providerConfig = {
       ...providerConfig,

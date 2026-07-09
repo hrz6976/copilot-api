@@ -1,7 +1,7 @@
 import { events } from "fetch-event-stream"
 import type { Context } from "hono"
 
-import { streamSSE } from "hono/streaming"
+import { streamSSE, type SSEStreamingApi } from "hono/streaming"
 
 import {
   type ModelConfig,
@@ -16,7 +16,7 @@ import {
   applyProviderContextCache,
   applyProviderStreamOptions,
 } from "~/lib/provider-payload"
-import { HTTPError } from "~/lib/error"
+import { HTTPError, getStreamErrorMessage } from "~/lib/error"
 import { createHandlerLogger, debugJson } from "~/lib/logger"
 import { resolveProviderConfig } from "~/lib/provider-resolver"
 import {
@@ -459,6 +459,8 @@ const streamAnthropicProviderChatCompletions = (
       }
 
       await stream.writeSSE({ data: "[DONE]" })
+    } catch (error) {
+      await writeOpenAIChatStreamFailure(stream, error, options.provider)
     } finally {
       options.recordUsage(usage)
     }
@@ -552,6 +554,8 @@ const streamResponsesProviderChatCompletions = (
       }
 
       await stream.writeSSE({ data: "[DONE]" })
+    } catch (error) {
+      await writeOpenAIChatStreamFailure(stream, error, options.provider)
     } finally {
       options.recordUsage(usage)
     }
@@ -587,6 +591,8 @@ const streamProviderChatCompletions = (
           data: chunk.data ?? "",
         })
       }
+    } catch (error) {
+      await writeOpenAIChatStreamFailure(stream, error, options.provider)
     } finally {
       options.recordUsage(usage)
     }
@@ -657,3 +663,17 @@ const createOpenAIChatStreamErrorBody = (
     ...(error.param !== undefined ? { param: error.param } : {}),
   },
 })
+
+const writeOpenAIChatStreamFailure = async (
+  stream: SSEStreamingApi,
+  error: unknown,
+  provider: string,
+): Promise<void> => {
+  const message = getStreamErrorMessage(error)
+  logger.error("provider.chat_completions.stream_error", { provider, message })
+  await stream.writeSSE({
+    event: "error",
+    data: JSON.stringify(createOpenAIChatStreamErrorBody({ message })),
+  })
+  await stream.writeSSE({ data: "[DONE]" })
+}

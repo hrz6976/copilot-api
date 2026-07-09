@@ -451,6 +451,64 @@ describe("provider responses backed by OpenAI-compatible chat completions", () =
     expect(text).toContain("rate limited mid-stream")
     expect(text).not.toContain("event: response.completed")
     expect(text).not.toContain("event: response.incomplete")
+    // The error is surfaced as a terminal response.failed as well, so clients
+    // that only render response.error see the reason.
+    expect(text).toContain("event: response.failed")
+  })
+
+  test("surfaces a thrown mid-stream error as response.failed + error", async () => {
+    fetchMock.mockImplementationOnce(
+      (_url: string | URL | Request, _init?: RequestInit) => {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                "data: "
+                  + JSON.stringify({
+                    id: "chatcmpl-stream",
+                    object: "chat.completion.chunk",
+                    created: 0,
+                    model: "deepseek-chat",
+                    choices: [
+                      {
+                        index: 0,
+                        delta: { role: "assistant", content: "partial" },
+                        finish_reason: null,
+                        logprobs: null,
+                      },
+                    ],
+                  })
+                  + "\n\n",
+              ),
+            )
+            controller.error(new Error("upstream connection reset"))
+          },
+        })
+        return Promise.resolve(
+          new Response(body, {
+            headers: { "content-type": "text/event-stream" },
+          }),
+        )
+      },
+    )
+
+    const response = await createApp().request("/v1/responses", {
+      body: JSON.stringify({
+        model: "cloudgpt/deepseek-chat",
+        input: "hello",
+        stream: true,
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    const text = await response.text()
+    expect(text).toContain("event: response.failed")
+    expect(text).toContain("event: error")
+    expect(text).toContain("upstream connection reset")
   })
 
   test("empty upstream streams end in an error instead of a fabricated completion", async () => {

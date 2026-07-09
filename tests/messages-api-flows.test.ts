@@ -719,6 +719,79 @@ const createModel = (
   version: "1",
 })
 
+test("messages Chat Completions flow forwards a thrown mid-stream error", async () => {
+  messagesApiFlowDependencies.createChatCompletions = mock(() =>
+    Promise.resolve(throwingStream(new Error("boom-chat"))),
+  ) as unknown as typeof createChatCompletions
+
+  const payload: AnthropicMessagesPayload = {
+    max_tokens: 16,
+    messages: [{ role: "user", content: "hello" }],
+    model: "gpt-test",
+    stream: true,
+  }
+  const app = new Hono()
+  app.post("/", (c) =>
+    handleWithChatCompletions(c, payload, { logger, requestId: "request-1" }),
+  )
+
+  const response = await app.request("/", { method: "POST" })
+  expect(response.status).toBe(200)
+  const text = await response.text()
+  expect(text).toContain("event: error")
+  expect(text).toContain("boom-chat")
+})
+
+test("messages Responses flow forwards a thrown mid-stream error", async () => {
+  messagesApiFlowDependencies.createResponses = mock(() =>
+    Promise.resolve(throwingStream(new Error("boom-responses"))),
+  ) as unknown as typeof createResponses
+
+  const payload: AnthropicMessagesPayload = {
+    max_tokens: 16,
+    messages: [{ role: "user", content: "hello" }],
+    model: "gpt-test",
+    stream: true,
+  }
+  const app = new Hono()
+  app.post("/", (c) =>
+    handleWithResponsesApi(c, payload, {
+      logger,
+      requestId: "request-1",
+      selectedModel: createModel(["/responses"]),
+    }),
+  )
+
+  const response = await app.request("/", { method: "POST" })
+  expect(response.status).toBe(200)
+  const text = await response.text()
+  expect(text).toContain("event: error")
+  expect(text).toContain("boom-responses")
+})
+
+test("messages Messages flow forwards a thrown mid-stream error", async () => {
+  messagesApiFlowDependencies.createMessages = mock(() =>
+    Promise.resolve(throwingStream(new Error("boom-messages"))),
+  ) as unknown as typeof createMessages
+
+  const payload: AnthropicMessagesPayload = {
+    max_tokens: 16,
+    messages: [{ role: "user", content: "hello" }],
+    model: "claude-sonnet-4.6",
+    stream: true,
+  }
+  const app = new Hono()
+  app.post("/", (c) =>
+    handleWithMessagesApi(c, payload, { logger, requestId: "request-1" }),
+  )
+
+  const response = await app.request("/", { method: "POST" })
+  expect(response.status).toBe(200)
+  const text = await response.text()
+  expect(text).toContain("event: error")
+  expect(text).toContain("boom-messages")
+})
+
 const createMessagesResult = (model: string): AnthropicResponse => ({
   content: [],
   id: "msg-test",
@@ -739,6 +812,18 @@ async function* createMessagesStream(
   for (const event of events) {
     await Promise.resolve()
     yield event
+  }
+}
+
+function throwingStream(
+  error: Error,
+): AsyncIterable<{ data: string; event?: string }> {
+  return {
+    [Symbol.asyncIterator]() {
+      return {
+        next: () => Promise.reject(error),
+      }
+    },
   }
 }
 

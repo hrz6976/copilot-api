@@ -27,6 +27,11 @@ import {
 
 import { createStreamIdTracker, fixStreamIds } from "./stream-id-sync"
 import {
+  getResponsesStreamErrorInfo,
+  writeResponsesStreamFailure,
+  type ResponsesStreamErrorInfo,
+} from "./stream-error"
+import {
   applyResponsesApiContextManagement,
   compactInputByLatestCompaction,
   getResponsesTransportForModel,
@@ -152,37 +157,61 @@ export const handleResponses = async (c: Context) => {
     return streamSSE(c, async (stream) => {
       const idTracker = createStreamIdTracker()
       let usage: UsageTokens = {}
+      let sequenceNumber = 0
 
-      for await (const chunk of response) {
-        debugJson(logger, "Responses stream chunk:", chunk)
-        const parsedEvent = parseResponsesStreamEvent(chunk)
-        if (
-          parsedEvent?.type === "response.completed"
-          || parsedEvent?.type === "response.failed"
-          || parsedEvent?.type === "response.incomplete"
-        ) {
-          usage = {
-            ...normalizeResponsesUsage(parsedEvent.response.usage),
-            total_nano_aiu: normalizeOptionalToken(
-              parsedEvent.copilot_usage?.total_nano_aiu,
-            ),
+      try {
+        for await (const chunk of response) {
+          debugJson(logger, "Responses stream chunk:", chunk)
+          const parsedEvent = parseResponsesStreamEvent(chunk)
+          if (parsedEvent && typeof parsedEvent.sequence_number === "number") {
+            sequenceNumber = parsedEvent.sequence_number
           }
+
+          if (parsedEvent?.type === "error") {
+            logger.error("Responses stream error event:", parsedEvent.message)
+            sequenceNumber = await writeResponsesStreamFailure(
+              stream,
+              getResponsesStreamEventErrorInfo(parsedEvent),
+              { sequenceNumber: sequenceNumber + 1, model: payload.model },
+            )
+            break
+          }
+
+          if (
+            parsedEvent?.type === "response.completed"
+            || parsedEvent?.type === "response.failed"
+            || parsedEvent?.type === "response.incomplete"
+          ) {
+            usage = {
+              ...normalizeResponsesUsage(parsedEvent.response.usage),
+              total_nano_aiu: normalizeOptionalToken(
+                parsedEvent.copilot_usage?.total_nano_aiu,
+              ),
+            }
+          }
+
+          const processedData = fixStreamIds(
+            (chunk as { data?: string }).data ?? "",
+            (chunk as { event?: string }).event,
+            idTracker,
+          )
+
+          await stream.writeSSE({
+            id: (chunk as { id?: string }).id,
+            event: (chunk as { event?: string }).event,
+            data: processedData,
+          })
         }
-
-        const processedData = fixStreamIds(
-          (chunk as { data?: string }).data ?? "",
-          (chunk as { event?: string }).event,
-          idTracker,
-        )
-
-        await stream.writeSSE({
-          id: (chunk as { id?: string }).id,
-          event: (chunk as { event?: string }).event,
-          data: processedData,
+      } catch (error) {
+        const info = getResponsesStreamErrorInfo(error)
+        logger.error("Responses stream failed:", info.message)
+        await writeResponsesStreamFailure(stream, info, {
+          sequenceNumber: sequenceNumber + 1,
+          model: payload.model,
         })
+      } finally {
+        recordUsage(usage)
       }
-
-      recordUsage(usage)
     })
   }
 
@@ -221,6 +250,16 @@ const parseResponsesStreamEvent = (
     return null
   }
 }
+
+const getResponsesStreamEventErrorInfo = (
+  event: Extract<ResponseStreamEvent, { type: "error" }>,
+): ResponsesStreamErrorInfo => ({
+  code: event.code ?? event.error?.code ?? null,
+  message:
+    event.message ?? event.error?.message ?? "Upstream responses stream failed",
+  param: event.param ?? null,
+  type: event.error?.type ?? null,
+})
 
 const removeWebSearchTool = (payload: ResponsesPayload): void => {
   if (!Array.isArray(payload.tools) || payload.tools.length === 0) return

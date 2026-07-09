@@ -30,6 +30,11 @@ import {
   compactInputByLatestCompaction,
 } from "~/routes/responses/utils"
 import {
+  getResponsesStreamErrorInfo,
+  parseResponsesStreamErrorInfo,
+  writeResponsesStreamFailure,
+} from "~/routes/responses/stream-error"
+import {
   createOpenAIChatToResponsesStreamState,
   finalizeOpenAIChatToResponsesStream,
   ResponsesToOpenAIChatTranslationError,
@@ -326,14 +331,15 @@ const streamOpenAICompatibleProviderResponses = (
         }
 
         if (chunk.event === "error") {
-          const errorEvent = createResponsesStreamErrorEvent(
-            chunk.data,
-            streamState,
+          streamState.sequenceNumber = await writeResponsesStreamFailure(
+            stream,
+            parseResponsesStreamErrorInfo(chunk.data),
+            {
+              sequenceNumber: streamState.sequenceNumber + 1,
+              model: options.payload.model,
+              responseId: streamState.responseId,
+            },
           )
-          await stream.writeSSE({
-            event: errorEvent.type,
-            data: JSON.stringify(errorEvent),
-          })
           streamFailed = true
           break
         }
@@ -346,14 +352,15 @@ const streamOpenAICompatibleProviderResponses = (
         // OpenAI-compatible upstreams report mid-stream failures as plain
         // `data: {"error": ...}` lines without an SSE event name
         if (isRecord(parsedData) && isRecord(parsedData.error)) {
-          const errorEvent = createResponsesStreamErrorEvent(
-            chunk.data,
-            streamState,
+          streamState.sequenceNumber = await writeResponsesStreamFailure(
+            stream,
+            parseResponsesStreamErrorInfo(chunk.data),
+            {
+              sequenceNumber: streamState.sequenceNumber + 1,
+              model: options.payload.model,
+              responseId: streamState.responseId,
+            },
           )
-          await stream.writeSSE({
-            event: errorEvent.type,
-            data: JSON.stringify(errorEvent),
-          })
           streamFailed = true
           break
         }
@@ -385,18 +392,19 @@ const streamOpenAICompatibleProviderResponses = (
         if (streamState.responseId === undefined) {
           // Nothing usable arrived; surface an error instead of fabricating
           // a successful empty completion
-          const errorEvent = createResponsesStreamErrorEvent(
-            JSON.stringify({
-              error: {
-                message: `Empty chat completions stream from ${options.provider}`,
-              },
-            }),
-            streamState,
+          streamState.sequenceNumber = await writeResponsesStreamFailure(
+            stream,
+            {
+              code: null,
+              message: `Empty chat completions stream from ${options.provider}`,
+              param: null,
+              type: null,
+            },
+            {
+              sequenceNumber: streamState.sequenceNumber + 1,
+              model: options.payload.model,
+            },
           )
-          await stream.writeSSE({
-            event: errorEvent.type,
-            data: JSON.stringify(errorEvent),
-          })
         } else {
           for (const event of finalizeOpenAIChatToResponsesStream(
             streamState,
@@ -412,6 +420,17 @@ const streamOpenAICompatibleProviderResponses = (
           }
         }
       }
+    } catch (error) {
+      const info = getResponsesStreamErrorInfo(error)
+      logger.error("provider.responses.openai_compatible.stream_error", {
+        provider: options.provider,
+        message: info.message,
+      })
+      await writeResponsesStreamFailure(stream, info, {
+        sequenceNumber: streamState.sequenceNumber + 1,
+        model: options.payload.model,
+        responseId: streamState.responseId,
+      })
     } finally {
       options.recordUsage(usage)
     }
@@ -436,50 +455,6 @@ const isChatCompletionChunk = (value: unknown): value is ChatCompletionChunk =>
   && typeof value.id === "string"
   && typeof value.model === "string"
   && Array.isArray(value.choices)
-
-const createResponsesStreamErrorEvent = (
-  data: string,
-  streamState: ReturnType<typeof createOpenAIChatToResponsesStreamState>,
-): ResponseStreamEvent => {
-  let message = "Provider chat completion stream returned an error"
-  let code: string | null = null
-  let param: string | null = null
-  let type: string | null = null
-
-  try {
-    const parsed = JSON.parse(data) as unknown
-    const errorCandidate = isRecord(parsed) ? parsed.error : parsed
-    if (isRecord(errorCandidate)) {
-      message =
-        typeof errorCandidate.message === "string" ?
-          errorCandidate.message
-        : message
-      code =
-        typeof errorCandidate.code === "string" ? errorCandidate.code : null
-      param =
-        typeof errorCandidate.param === "string" ? errorCandidate.param : null
-      type =
-        typeof errorCandidate.type === "string" ? errorCandidate.type : null
-    }
-  } catch {
-    if (data.trim().length > 0) {
-      message = data
-    }
-  }
-
-  return {
-    type: "error",
-    sequence_number: ++streamState.sequenceNumber,
-    code,
-    message,
-    param,
-    error: {
-      code,
-      message,
-      type,
-    },
-  }
-}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null
@@ -567,6 +542,7 @@ const streamProviderResponses = async (
 
   return streamSSE(c, async (stream) => {
     let usage: UsageTokens = {}
+    let sequenceNumber = 0
 
     const writeChunk = async (chunk: typeof firstChunk) => {
       debugJson(logger, "Responses stream chunk:", chunk)
@@ -585,6 +561,31 @@ const streamProviderResponses = async (
             event: event.type,
           }
         }
+      }
+
+      if (event && typeof event.sequence_number === "number") {
+        sequenceNumber = event.sequence_number
+      }
+
+      if (event?.type === "error") {
+        logger.error("provider.responses.stream_error_event", {
+          provider: options.provider,
+          message: event.message,
+        })
+        sequenceNumber = await writeResponsesStreamFailure(
+          stream,
+          {
+            code: event.code ?? event.error?.code ?? null,
+            message:
+              event.message
+              ?? event.error?.message
+              ?? "Upstream responses stream failed",
+            param: event.param ?? null,
+            type: event.error?.type ?? null,
+          },
+          { sequenceNumber: sequenceNumber + 1 },
+        )
+        return
       }
 
       if (event) {
@@ -608,6 +609,15 @@ const streamProviderResponses = async (
       }) {
         await writeChunk(chunk)
       }
+    } catch (error) {
+      const info = getResponsesStreamErrorInfo(error)
+      logger.error("provider.responses.stream_error", {
+        provider: options.provider,
+        message: info.message,
+      })
+      await writeResponsesStreamFailure(stream, info, {
+        sequenceNumber: sequenceNumber + 1,
+      })
     } finally {
       options.recordUsage(usage)
     }

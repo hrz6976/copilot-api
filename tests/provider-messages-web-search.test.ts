@@ -625,4 +625,57 @@ describe("provider messages web_search", () => {
     }
     expect(upstreamBody.tools).toEqual([])
   })
+
+  test("forwards a thrown mid-stream error as an Anthropic error event", async () => {
+    fetchMock.mockImplementationOnce(() => {
+      let stage = 0
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (stage === 0) {
+            stage = 1
+            controller.enqueue(
+              new TextEncoder().encode(
+                [
+                  "event: response.created",
+                  `data: ${JSON.stringify({
+                    type: "response.created",
+                    sequence_number: 0,
+                    response: { id: "resp-1" },
+                  })}`,
+                  "",
+                  "",
+                ].join("\n"),
+              ),
+            )
+            return
+          }
+          controller.error(new Error("provider messages reset"))
+        },
+      })
+      return Promise.resolve(
+        new Response(body, {
+          headers: { "content-type": "text/event-stream" },
+        }),
+      )
+    })
+
+    const app = createApp()
+    const response = await app.request("/search/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        max_tokens: 128,
+        messages: [{ role: "user", content: "hello" }],
+        model: "gpt-search",
+        stream: true,
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    const text = await response.text()
+    expect(text).toContain("event: error")
+    expect(text).toContain("provider messages reset")
+  })
 })

@@ -74,6 +74,17 @@ async function* streamChunks(items: Array<Record<string, unknown>>) {
   }
 }
 
+async function* streamChunksThenThrow(
+  error: Error,
+  items: Array<Record<string, unknown>> = [],
+) {
+  await Promise.resolve()
+  for (const item of items) {
+    yield item
+  }
+  throw error
+}
+
 beforeEach(async () => {
   process.env[DB_PATH_ENV] = ":memory:"
   await closeUsageStore()
@@ -881,5 +892,63 @@ describe("responses handler token usage", () => {
     expect(page.items[0]?.output_tokens).toBe(2)
     expect(page.items[0]?.total_nano_aiu).toBe(1234)
     expect(page.items[0]?.total_tokens).toBe(7)
+  })
+
+  test("forwards a thrown mid-stream error as response.failed + error", async () => {
+    createResponses.mockImplementation(() =>
+      Promise.resolve(
+        streamChunksThenThrow(
+          new Error("encrypted content could not be verified"),
+        ),
+      ),
+    )
+
+    const app = createApp()
+    const response = await app.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ input: "hello", model: "gpt-test", stream: true }),
+    })
+
+    expect(response.status).toBe(200)
+    const text = await response.text()
+    expect(text).toContain("event: response.failed")
+    expect(text).toContain("event: error")
+    expect(text).toContain("encrypted content could not be verified")
+    expect(text).toContain('"status":"failed"')
+  })
+
+  test("converts an upstream error event into response.failed + error", async () => {
+    createResponses.mockImplementation(() =>
+      Promise.resolve(
+        streamChunks([
+          {
+            data: JSON.stringify({
+              type: "error",
+              sequence_number: 3,
+              code: "upstream_error",
+              message: "encrypted content could not be verified",
+              param: null,
+            }),
+            event: "error",
+          },
+        ]),
+      ),
+    )
+
+    const app = createApp()
+    const response = await app.request("/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ input: "hello", model: "gpt-test", stream: true }),
+    })
+
+    expect(response.status).toBe(200)
+    const text = await response.text()
+    expect(text).toContain("event: response.failed")
+    expect(text).toContain("event: error")
+    expect(text).toContain("encrypted content could not be verified")
+    // The failed event carries the message where clients read it.
+    expect(text).toContain('"error":{"code":"upstream_error"')
   })
 })
