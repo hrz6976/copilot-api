@@ -2,6 +2,8 @@
 
 English | [简体中文](./README.zh-CN.md)
 
+> This is a fork of [caozhiyuan/copilot-api](https://github.com/caozhiyuan/copilot-api) published as [`@hrz6976/copilot-api`](https://www.npmjs.com/package/@hrz6976/copilot-api). It adds the CloudGPT provider (Azure CLI auth, static model catalog, automatic per-model Chat Completions/Responses routing). Docker images and desktop app binaries are not published for this fork; build them locally if needed.
+
 ## Important Notes
 
 > [!IMPORTANT]
@@ -9,7 +11,7 @@ English | [简体中文](./README.zh-CN.md)
 >
 > 1. **Claude Code configuration:** When using with Claude Code, please configure the model ID as `claude-opus-4-8`. Example claude `settings.json` see [Manual Configuration with `settings.json`](#manual-configuration-with-settingsjson). 
 >
-> 2. **Built-in `copilot`, `codex` and third-party providers:** Run `npx @jeffreycao/copilot-api@latest auth` and choose `copilot`, `codex`, `deepseek`, `cloudgpt`, `custom`, or other providers.
+> 2. **Built-in `copilot`, `codex` and third-party providers:** Run `npx @hrz6976/copilot-api@latest auth` and choose `copilot`, `codex`, `deepseek`, `cloudgpt`, `custom`, or other providers.
 >
 > 3. **Note:** See [GitHub Copilot Security Notice](./NOTICE.md#github-copilot-security-notice) for the warning removed from the README header.
 
@@ -80,29 +82,29 @@ You can run the project directly using npx:
 > [!IMPORTANT]
 > Token usage storage uses Node's built-in `node:sqlite` module when running with `npx`. It is enabled on Node.js >= 22.13.0. On Node.js < 22.13.0, the CLI still starts, but token usage storage is disabled.
 >
-> If you want token usage storage without upgrading Node.js, run the published CLI with Bun instead: `bunx --bun @jeffreycao/copilot-api@latest start`.
+> If you want token usage storage without upgrading Node.js, run the published CLI with Bun instead: `bunx --bun @hrz6976/copilot-api@latest start`.
 
 ```sh
-npx @jeffreycao/copilot-api@latest start
+npx @hrz6976/copilot-api@latest start
 ```
 
 With options:
 
 ```sh
-npx @jeffreycao/copilot-api@latest start --port 8080
+npx @hrz6976/copilot-api@latest start --port 8080
 ```
 
 For authentication or provider configuration only:
 
 ```sh
-npx @jeffreycao/copilot-api@latest auth
+npx @hrz6976/copilot-api@latest auth
 ```
 
 To run without GitHub Copilot, configure at least one provider first, then start the server normally:
 
 ```sh
-npx @jeffreycao/copilot-api@latest auth login --provider dashscope
-npx @jeffreycao/copilot-api@latest start
+npx @hrz6976/copilot-api@latest auth login --provider dashscope
+npx @hrz6976/copilot-api@latest start
 ```
 
 ## Using with Docker
@@ -134,7 +136,7 @@ If you prefer a GUI, this repository also includes an Electron desktop app in `d
 
 The settings screen also exposes `OAuth App`, `API Home`, `Enterprise URL`, verbose logging, and minimize-to-tray. Desktop packages are published in GitHub Releases:
 
-https://github.com/caozhiyuan/copilot-api/releases
+https://github.com/hrz6976/copilot-api/releases
 
 Download the installer for your platform, authorize or configure a provider inside the app, choose a port, start the server, then point your client at the local endpoint shown in the app. Packaged desktop builds use the bundled Electron runtime, so normal desktop usage does not require installing Node.js separately. Token usage history is enabled when that bundled runtime supports SQLite.
 
@@ -160,7 +162,7 @@ There are two ways to configure Claude Code to use this AI gateway:
 To get started, run the `start` command with the `--claude-code` flag:
 
 ```sh
-npx @jeffreycao/copilot-api@latest start --claude-code
+npx @hrz6976/copilot-api@latest start --claude-code
 ```
 
 You will be prompted to select a primary model and a "small, fast" model for background tasks. After selecting the models, a command will be copied to your clipboard. This command sets the necessary environment variables for Claude Code to use the gateway.
@@ -216,8 +218,8 @@ OpenCode already has a direct GitHub Copilot provider. Use this section when you
 Start the AI gateway with the OpenCode OAuth app:
 
 ```sh
-npx @jeffreycao/copilot-api@latest auth --oauth-app=opencode
-npx @jeffreycao/copilot-api@latest start
+npx @hrz6976/copilot-api@latest auth --oauth-app=opencode
+npx @hrz6976/copilot-api@latest start
 ```
 
 Then point OpenCode at the gateway with `@ai-sdk/anthropic`.
@@ -330,7 +332,7 @@ Add the tool search bridge to the MCP config used by Claude Code:
     "tool_search": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@jeffreycao/copilot-api@latest", "mcp"]
+      "args": ["-y", "@hrz6976/copilot-api@latest", "mcp"]
     }
   }
 }
@@ -343,7 +345,7 @@ Add the tool search bridge to the MCP config used by opencode:
   "mcp": {
     "tool_search": {
       "type": "local",
-      "command": ["npx", "-y", "@jeffreycao/copilot-api@latest", "mcp"]
+      "command": ["npx", "-y", "@hrz6976/copilot-api@latest", "mcp"]
     }
   }
 }
@@ -372,7 +374,7 @@ The Claude Code integration is packaged as two plugins:
 Add the marketplace remotely:
 
 ```sh
-/plugin marketplace add https://github.com/caozhiyuan/copilot-api.git
+/plugin marketplace add https://github.com/hrz6976/copilot-api.git
 ```
 
 Install the plugins from the marketplace:
@@ -421,7 +423,7 @@ After starting the server, a URL to the Copilot Usage Dashboard will be displaye
 
 1.  Start the server. For example, using npx:
     ```sh
-    npx @jeffreycao/copilot-api@latest start
+    npx @hrz6976/copilot-api@latest start
     ```
 2.  The server will output a URL to the usage viewer. Copy and paste this URL into your browser. It will look something like this:
     `http://localhost:4141/usage-viewer?endpoint=http://localhost:4141/usage`
@@ -704,23 +706,23 @@ Common `npx` commands:
 
 ```sh
 # Start the gateway
-npx @jeffreycao/copilot-api@latest start
+npx @hrz6976/copilot-api@latest start
 
 # Start on a custom port with verbose logging
-npx @jeffreycao/copilot-api@latest start --port 8080 --verbose
+npx @hrz6976/copilot-api@latest start --port 8080 --verbose
 
 # Run the auth flow
-npx @jeffreycao/copilot-api@latest auth login
+npx @hrz6976/copilot-api@latest auth login
 
 # Configure a third-party provider, then run without GitHub Copilot
-npx @jeffreycao/copilot-api@latest auth login --provider dashscope
-npx @jeffreycao/copilot-api@latest start
+npx @hrz6976/copilot-api@latest auth login --provider dashscope
+npx @hrz6976/copilot-api@latest start
 
 # Print debug information as JSON
-npx @jeffreycao/copilot-api@latest debug --json
+npx @hrz6976/copilot-api@latest debug --json
 
 # Run the published CLI with Bun instead of Node.js
-bunx --bun @jeffreycao/copilot-api@latest start
+bunx --bun @hrz6976/copilot-api@latest start
 ```
 
 OpenAI-compatible provider examples after configuring `dashscope`:

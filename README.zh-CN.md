@@ -2,6 +2,8 @@
 
 [English](./README.md) | 简体中文
 
+> 本项目是 [caozhiyuan/copilot-api](https://github.com/caozhiyuan/copilot-api) 的 fork，以 [`@hrz6976/copilot-api`](https://www.npmjs.com/package/@hrz6976/copilot-api) 发布到 npm。新增 CloudGPT provider（Azure CLI 认证、内置静态模型目录、按模型自动路由 Chat Completions/Responses）。本 fork 不发布 Docker 镜像和桌面应用，如有需要请本地构建。
+
 ## 重要说明
 
 > [!IMPORTANT]
@@ -9,7 +11,7 @@
 >
 > 1. **Claude Code 配置：** 与 Claude Code 搭配使用时，请将模型 ID 配置为 `claude-opus-4-8`。示例 claude `settings.json` 见 [通过 `settings.json` 手动配置](#manual-configuration-with-settingsjson)。
 >
-> 2. **内置 `copilot`、`codex` 与第三方 provider：** 执行 `npx @jeffreycao/copilot-api@latest auth`，可选择 `copilot`、`codex`、`deepseek`、`cloudgpt`、`custom` 等 provider。
+> 2. **内置 `copilot`、`codex` 与第三方 provider：** 执行 `npx @hrz6976/copilot-api@latest auth`，可选择 `copilot`、`codex`、`deepseek`、`cloudgpt`、`custom` 等 provider。
 >
 > 3. **注意事项：** README 顶部移除的 GitHub Copilot warning 见 [GitHub Copilot 安全提示](./NOTICE.md#github-copilot-security-notice)。
 
@@ -80,29 +82,29 @@ bun run start start
 > [!IMPORTANT]
 > 通过 `npx` 运行时，token usage 存储会使用 Node 内置的 `node:sqlite` 模块。该能力会在 Node.js >= 22.13.0 时启用；Node.js < 22.13.0 时 CLI 仍可启动，但会禁用 token usage 存储。
 >
-> 如果不升级 Node.js 但仍需要 token usage 存储，可以改用 Bun 运行已发布 CLI：`bunx --bun @jeffreycao/copilot-api@latest start`。
+> 如果不升级 Node.js 但仍需要 token usage 存储，可以改用 Bun 运行已发布 CLI：`bunx --bun @hrz6976/copilot-api@latest start`。
 
 ```sh
-npx @jeffreycao/copilot-api@latest start
+npx @hrz6976/copilot-api@latest start
 ```
 
 带参数示例：
 
 ```sh
-npx @jeffreycao/copilot-api@latest start --port 8080
+npx @hrz6976/copilot-api@latest start --port 8080
 ```
 
 如果只想做认证或 provider 配置：
 
 ```sh
-npx @jeffreycao/copilot-api@latest auth
+npx @hrz6976/copilot-api@latest auth
 ```
 
 如果要不依赖 GitHub Copilot 运行，先配置至少一个 provider，然后正常启动服务：
 
 ```sh
-npx @jeffreycao/copilot-api@latest auth login --provider dashscope
-npx @jeffreycao/copilot-api@latest start
+npx @hrz6976/copilot-api@latest auth login --provider dashscope
+npx @hrz6976/copilot-api@latest start
 ```
 
 ## 配合 Docker 使用
@@ -134,7 +136,7 @@ docker run -p 4141:4141 -e GH_TOKEN=your_github_token_here copilot-api
 
 设置页还可以配置 `OAuth App`、`API Home`、`Enterprise URL`、详细日志以及最小化到托盘。桌面安装包发布在 GitHub Releases：
 
-https://github.com/caozhiyuan/copilot-api/releases
+https://github.com/hrz6976/copilot-api/releases
 
 下载对应平台的安装包后，在应用内授权或配置 provider，选择端口并启动服务，再把你的客户端指向应用里显示的本地端点即可。发布版桌面应用使用随包内置的 Electron 运行时，正常使用不需要额外安装 Node.js；token usage 历史记录会在该内置运行时支持 SQLite 时启用。
 
@@ -160,7 +162,7 @@ https://github.com/caozhiyuan/copilot-api/releases
 执行带 `--claude-code` 的 `start` 命令开始：
 
 ```sh
-npx @jeffreycao/copilot-api@latest start --claude-code
+npx @hrz6976/copilot-api@latest start --claude-code
 ```
 
 你会被提示选择一个主模型，以及一个用于后台任务的 "small, fast" 模型。选择完成后，会有一条命令被复制到剪贴板中。该命令会设置 Claude Code 使用这个 AI gateway 所需的环境变量。
@@ -218,8 +220,8 @@ OpenCode 已经有直接的 GitHub Copilot provider。本节适用于你希望�
 使用 OpenCode OAuth app 启动 AI gateway：
 
 ```sh
-npx @jeffreycao/copilot-api@latest auth --oauth-app=opencode
-npx @jeffreycao/copilot-api@latest start
+npx @hrz6976/copilot-api@latest auth --oauth-app=opencode
+npx @hrz6976/copilot-api@latest start
 ```
 
 然后让 OpenCode 通过 `@ai-sdk/anthropic` 指向这个 AI gateway。
@@ -332,7 +334,7 @@ GPT 模型不要设置 Claude Code 原生的 `ENABLE_TOOL_SEARCH`。这个开关
     "tool_search": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@jeffreycao/copilot-api@latest", "mcp"]
+      "args": ["-y", "@hrz6976/copilot-api@latest", "mcp"]
     }
   }
 }
@@ -345,7 +347,7 @@ GPT 模型不要设置 Claude Code 原生的 `ENABLE_TOOL_SEARCH`。这个开关
   "mcp": {
     "tool_search": {
       "type": "local",
-      "command": ["npx", "-y", "@jeffreycao/copilot-api@latest", "mcp"]
+      "command": ["npx", "-y", "@hrz6976/copilot-api@latest", "mcp"]
     }
   }
 }
@@ -376,7 +378,7 @@ Claude Code 集成现在拆分为两个插件：
 远程添加 marketplace：
 
 ```sh
-/plugin marketplace add https://github.com/caozhiyuan/copilot-api.git
+/plugin marketplace add https://github.com/hrz6976/copilot-api.git
 ```
 
 从 marketplace 安装插件：
@@ -425,7 +427,7 @@ cp plugin/opencode/subagent-marker.js ~/.config/opencode/plugins/
 
 1. 启动服务。例如使用 npx：
    ```sh
-   npx @jeffreycao/copilot-api@latest start
+   npx @hrz6976/copilot-api@latest start
    ```
 2. 服务会输出一个 usage viewer 的 URL。将它复制到浏览器中打开，形式大致如下：
    `http://localhost:4141/usage-viewer?endpoint=http://localhost:4141/usage`
@@ -710,23 +712,23 @@ curl http://localhost:4141/admin/config/model-mappings \
 
 ```sh
 # 基础启动
-npx @jeffreycao/copilot-api@latest start
+npx @hrz6976/copilot-api@latest start
 
 # 自定义端口并开启详细日志
-npx @jeffreycao/copilot-api@latest start --port 8080 --verbose
+npx @hrz6976/copilot-api@latest start --port 8080 --verbose
 
 # 执行认证流程
-npx @jeffreycao/copilot-api@latest auth login
+npx @hrz6976/copilot-api@latest auth login
 
 # 配置第三方 provider，然后不依赖 GitHub Copilot 启动
-npx @jeffreycao/copilot-api@latest auth login --provider dashscope
-npx @jeffreycao/copilot-api@latest start
+npx @hrz6976/copilot-api@latest auth login --provider dashscope
+npx @hrz6976/copilot-api@latest start
 
 # 以 JSON 格式输出调试信息
-npx @jeffreycao/copilot-api@latest debug --json
+npx @hrz6976/copilot-api@latest debug --json
 
 # 用 Bun 而不是 Node.js 运行已发布 CLI
-bunx --bun @jeffreycao/copilot-api@latest start
+bunx --bun @hrz6976/copilot-api@latest start
 ```
 
 配置 `dashscope` 后的 OpenAI 兼容 provider 调用示例：
