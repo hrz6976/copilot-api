@@ -132,6 +132,10 @@ export async function handleProviderResponsesForProvider(
     compactInputByLatestCompaction(payload)
   }
 
+  if (providerConfig.name !== "codex") {
+    stripUnsupportedProviderResponsesInputFields(payload)
+  }
+
   debugJson(logger, "Translated Responses request payload:", {
     contextManagement: payload.context_management,
     provider,
@@ -477,6 +481,28 @@ const createResponsesStreamErrorEvent = (
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null
+
+const UNSUPPORTED_PROVIDER_RESPONSES_INPUT_FIELDS = [
+  "internal_chat_message_metadata_passthrough",
+] as const
+
+function stripUnsupportedProviderResponsesInputFields(
+  payload: ResponsesPayload,
+): void {
+  if (!Array.isArray(payload.input)) {
+    return
+  }
+
+  for (const item of payload.input) {
+    if (!isRecord(item)) {
+      continue
+    }
+
+    for (const field of UNSUPPORTED_PROVIDER_RESPONSES_INPUT_FIELDS) {
+      delete item[field]
+    }
+  }
+}
 
 const createProviderResponsesUsageRecorder = (
   payload: ResponsesPayload,

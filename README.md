@@ -298,7 +298,7 @@ model_auto_compact_token_limit = 244800
 [model_providers.copilot_api]
 name = "OpenAI"
 base_url = "http://localhost:4141"
-env_key = "GITHUB_COPILOT_API_KEY"
+api_key = "sk-dummy"
 requires_openai_auth = true
 supports_websockets = false
 wire_api = "responses"
@@ -314,7 +314,7 @@ enabled = false
 ```
 
 > [!NOTE]
-> This configuration is specific to Codex and the GitHub Copilot provider. `name` must be set to `"OpenAI"`. It can help mitigate Codex local compact cache miss issues. If you enable `contextManagement.responses` (Responses API context management compaction), `remote_compaction_v2` or local compact is generally not triggered, but it may still occur when tool results return a large number of tokens. Before enabling it for native Responses API traffic, check that your client supports context management compaction.
+> This configuration is specific to Codex and the GitHub Copilot provider. `name` must be set to `"OpenAI"`, and `api_key = "sk-dummy"` is only a placeholder because this gateway does not require an OpenAI API key unless you enable `auth.apiKeys`. The placeholder starts with `sk-` to satisfy Codex's API-key shape validation. If `auth.apiKeys` is enabled, replace `sk-dummy` with one of your configured keys. It can help mitigate Codex local compact cache miss issues. If you enable `contextManagement.responses` (Responses API context management compaction), `remote_compaction_v2` or local compact is generally not triggered, but it may still occur when tool results return a large number of tokens. Before enabling it for native Responses API traffic, check that your client supports context management compaction.
 
 ## GPT Tool Search
 

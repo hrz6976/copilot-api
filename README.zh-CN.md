@@ -300,7 +300,7 @@ model_auto_compact_token_limit = 244800
 [model_providers.copilot_api]
 name = "OpenAI"
 base_url = "http://localhost:4141"
-env_key = "GITHUB_COPILOT_API_KEY"
+api_key = "sk-dummy"
 requires_openai_auth = true
 supports_websockets = false
 wire_api = "responses"
@@ -316,7 +316,7 @@ enabled = false
 ```
 
 > [!NOTE]
-> 此配置仅限于 Codex 与 GitHub Copilot provider。`name` 一定要配置为 `"OpenAI"`。它可以缓解 Codex local compact 不命中缓存的问题。如果你开启了 `contextManagement.responses`（Responses API context management 压缩），通常不会走到 `remote_compaction_v2` 或者 local compact，但如果工具返回 tokens 过大，仍有可能触发。在 native Responses API 流量下启用前，请先确认客户端支持 context management compaction。
+> 此配置仅限于 Codex 与 GitHub Copilot provider。`name` 一定要配置为 `"OpenAI"`，`api_key = "sk-dummy"` 只是占位值；除非你启用了 `auth.apiKeys`，否则这个 gateway 不需要 OpenAI API key。占位值以 `sk-` 开头是为了满足 Codex 对 API key 格式的校验；如果启用了 `auth.apiKeys`，请把 `sk-dummy` 替换为你配置的 key。它可以缓解 Codex local compact 不命中缓存的问题。如果你开启了 `contextManagement.responses`（Responses API context management 压缩），通常不会走到 `remote_compaction_v2` 或者 local compact，但如果工具返回 tokens 过大，仍有可能触发。在 native Responses API 流量下启用前，请先确认客户端支持 context management compaction。
 
 ## GPT Tool Search
 

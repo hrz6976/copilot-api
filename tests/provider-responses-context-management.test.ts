@@ -144,6 +144,43 @@ describe("provider Responses context management", () => {
     expect(body.input).toHaveLength(3)
   })
 
+  test("strips Codex-only internal input metadata before forwarding non-Codex Responses providers", async () => {
+    const app = createApp()
+    const response = await app.request("/v1/responses", {
+      body: JSON.stringify({
+        input: [
+          {
+            content: "hello",
+            internal_chat_message_metadata_passthrough: {
+              conversation_id: "codex-internal",
+            },
+            role: "user",
+            type: "message",
+          },
+        ],
+        model: "openai/gpt-test",
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    const [, init] = fetchMock.mock.calls[0]
+    const body = parseJsonRequestBody((init as RequestInit).body) as {
+      input: Array<Record<string, unknown>>
+    }
+
+    expect(body.input[0]).toEqual({
+      content: "hello",
+      role: "user",
+      type: "message",
+    })
+  })
+
   test("adds context management and keeps only the latest compaction carrier when enabled", async () => {
     responsesUtilsDependencies.isContextManagementEnabledForResponses = () =>
       true
