@@ -23,10 +23,10 @@ import type {
 import {
   type ModelConfig,
   type ResolvedProviderConfig,
-  resolveEffectiveProviderType,
-  resolveProviderAuthType,
+  resolveEffectiveProviderConfig,
 } from "~/lib/config"
 import { logCodexRateLimitsEvent } from "~/lib/codex-rate-limit"
+import { applyMissingExtraBody } from "~/lib/provider-payload"
 import {
   applyDashScopePreserveThinkingDefault,
   applyOpenAICompatibleContextCache,
@@ -117,10 +117,11 @@ export async function handleProviderMessagesForProvider(
 
   try {
     const modelConfig = providerConfig.models?.[payload.model]
-    const effectiveType = resolveEffectiveProviderType(
+    const effectiveProviderConfig = resolveEffectiveProviderConfig(
       providerConfig,
       payload.model,
     )
+    const effectiveType = effectiveProviderConfig.type
     debugJson(logger, "provider.messages.request", { payload, provider })
 
     normalizeSystemMessages(payload)
@@ -134,7 +135,7 @@ export async function handleProviderMessagesForProvider(
             modelConfig,
             payload,
             provider,
-            providerConfig,
+            providerConfig: effectiveProviderConfig,
           })
         }
 
@@ -145,7 +146,7 @@ export async function handleProviderMessagesForProvider(
         modelConfig,
         payload,
         provider,
-        providerConfig,
+        providerConfig: effectiveProviderConfig,
       })
     }
 
@@ -156,7 +157,7 @@ export async function handleProviderMessagesForProvider(
         modelConfig,
         payload,
         provider,
-        providerConfig,
+        providerConfig: effectiveProviderConfig,
       })
     }
 
@@ -169,17 +170,7 @@ export async function handleProviderMessagesForProvider(
       provider,
     })
     const upstreamResponse = await forwardProviderMessages(
-      effectiveType === providerConfig.type ?
-        providerConfig
-      : {
-          ...providerConfig,
-          type: effectiveType,
-          authType: resolveProviderAuthType(
-            providerConfig.name,
-            undefined,
-            effectiveType,
-          ),
-        },
+      effectiveProviderConfig,
       payload,
       c.req.raw.headers,
     )
@@ -413,17 +404,6 @@ const applyModelDefaults = (
   payload.temperature ??= modelConfig?.temperature
   payload.top_p ??= modelConfig?.topP
   payload.top_k ??= modelConfig?.topK
-}
-
-const applyMissingExtraBody = (
-  payload: Record<string, unknown>,
-  options: { extraBody: Record<string, unknown> | undefined },
-): void => {
-  for (const [key, value] of Object.entries(options.extraBody ?? {})) {
-    if (!Object.hasOwn(payload, key)) {
-      payload[key] = value
-    }
-  }
 }
 
 const getRequestThinkingBudget = (

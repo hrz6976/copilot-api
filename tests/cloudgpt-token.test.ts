@@ -101,9 +101,16 @@ describe("CloudGPT Azure CLI token handling", () => {
     expect(await getCloudGptAzureCliAccessToken({ command, nowMs: 0 })).toBe(
       "token-1",
     )
-    expect(await getCloudGptAzureCliAccessToken({ command, nowMs: 0 })).toBe(
-      "token-2",
+    // Within the min refresh interval the still-valid near-expiry token is
+    // reused instead of spawning az again
+    expect(await getCloudGptAzureCliAccessToken({ command, nowMs: 1000 })).toBe(
+      "token-1",
     )
+    expect(calls).toBe(1)
+    // Once the interval has passed, the stale token is refreshed
+    expect(
+      await getCloudGptAzureCliAccessToken({ command, nowMs: 31_000 }),
+    ).toBe("token-2")
     expect(calls).toBe(2)
   })
 

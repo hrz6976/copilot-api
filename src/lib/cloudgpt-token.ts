@@ -8,6 +8,9 @@ export const CLOUDGPT_AZURE_SCOPE =
 export const CLOUDGPT_AZURE_LOGIN_COMMAND = `az login --tenant ${CLOUDGPT_AZURE_TENANT_ID}`
 
 const CLOUDGPT_TOKEN_REFRESH_WINDOW_MS = 5 * 60 * 1000
+// az may return its own cached near-expiry token; don't spawn it again for
+// every request while inside the refresh window
+const CLOUDGPT_TOKEN_MIN_REFRESH_INTERVAL_MS = 30 * 1000
 const AZURE_CLI_TIMEOUT_MS = 30 * 1000
 const execFileAsync = promisify(execFile)
 
@@ -22,6 +25,7 @@ type CloudGptAzureCliTokenCommand = () => Promise<CloudGptAzureCliToken>
 
 let cachedToken: CloudGptAzureCliToken | null = null
 let refreshPromise: Promise<CloudGptAzureCliToken> | null = null
+let lastRefreshCompletedAtMs = 0
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -104,6 +108,20 @@ export function isCloudGptAzureCliTokenFresh(
   return Boolean(token && token.expiresAtMs - nowMs > refreshWindowMs)
 }
 
+function getAzureCliPath(): string {
+  const path = process.env.PATH ?? ""
+  if (process.platform !== "darwin") {
+    return path
+  }
+
+  // GUI-launched Electron on macOS inherits the launchd PATH, which misses
+  // the Homebrew locations where az is typically installed
+  const extraPaths = ["/opt/homebrew/bin", "/usr/local/bin"].filter(
+    (candidate) => !path.split(":").includes(candidate),
+  )
+  return extraPaths.length > 0 ? `${path}:${extraPaths.join(":")}` : path
+}
+
 async function runAzureCliTokenCommand(): Promise<CloudGptAzureCliToken> {
   const { stdout } = await execFileAsync(
     "az",
@@ -122,6 +140,10 @@ async function runAzureCliTokenCommand(): Promise<CloudGptAzureCliToken> {
       timeout: AZURE_CLI_TIMEOUT_MS,
       windowsHide: true,
       maxBuffer: 1024 * 1024,
+      env: { ...process.env, PATH: getAzureCliPath() },
+      // On Windows az is az.cmd, which Node refuses to spawn without a shell.
+      // The arguments are fixed constants, so shell quoting is not a concern.
+      shell: process.platform === "win32",
     },
   )
 
@@ -146,6 +168,7 @@ async function refreshCloudGptAzureCliToken(
 export async function getCloudGptAzureCliAccessToken(
   options: {
     command?: CloudGptAzureCliTokenCommand
+    minRefreshIntervalMs?: number
     nowMs?: number
     refreshWindowMs?: number
   } = {},
@@ -153,6 +176,8 @@ export async function getCloudGptAzureCliAccessToken(
   const nowMs = options.nowMs ?? Date.now()
   const refreshWindowMs =
     options.refreshWindowMs ?? CLOUDGPT_TOKEN_REFRESH_WINDOW_MS
+  const minRefreshIntervalMs =
+    options.minRefreshIntervalMs ?? CLOUDGPT_TOKEN_MIN_REFRESH_INTERVAL_MS
   const currentToken = cachedToken
   if (
     currentToken
@@ -161,12 +186,25 @@ export async function getCloudGptAzureCliAccessToken(
     return currentToken.accessToken
   }
 
+  // Still-valid token inside the refresh window: if a refresh just happened
+  // (az likely handed back the same near-expiry token), reuse the cache
+  // instead of spawning az for every request until it expires.
+  if (
+    currentToken
+    && currentToken.expiresAtMs > nowMs
+    && nowMs - lastRefreshCompletedAtMs < minRefreshIntervalMs
+  ) {
+    return currentToken.accessToken
+  }
+
   try {
     const token = await refreshCloudGptAzureCliToken(
       options.command ?? runAzureCliTokenCommand,
     )
+    lastRefreshCompletedAtMs = nowMs
     return token.accessToken
   } catch (error) {
+    lastRefreshCompletedAtMs = nowMs
     const fallbackToken: CloudGptAzureCliToken | null = cachedToken
     if (fallbackToken && fallbackToken.expiresAtMs > nowMs) {
       consola.warn(
@@ -185,4 +223,5 @@ export async function getCloudGptAzureCliAccessToken(
 export function resetCloudGptAzureCliTokenCache(): void {
   cachedToken = null
   refreshPromise = null
+  lastRefreshCompletedAtMs = 0
 }

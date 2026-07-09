@@ -62,6 +62,8 @@ export async function resolveProviderConfig(
       ...providerConfig,
       apiKey: await getCloudGptAzureCliAccessToken(),
       authType: "authorization",
+      // Keep bearer auth even if a per-model type override recomputes authType
+      configuredAuthType: "authorization",
     }
   }
 

@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 
-import { listEnabledProviders } from "~/lib/config"
+import { getProviderConfig, listEnabledProviders } from "~/lib/config"
 import { forwardError } from "~/lib/error"
 import { createHandlerLogger } from "~/lib/logger"
 import { toClientModelId } from "~/lib/models"
@@ -92,6 +92,15 @@ async function getProviderModels(
   requestHeaders: Headers,
 ): Promise<Array<ClientModel>> {
   try {
+    // The CloudGPT catalog is static; don't require a live Azure CLI token
+    // (which resolveProviderConfig would acquire) just to list it
+    if (provider.trim() === "cloudgpt" && getProviderConfig("cloudgpt")) {
+      const cloudGptModels = getCloudGptModels().data
+      return cloudGptModels
+        .map((model) => normalizeProviderModel("cloudgpt", model))
+        .filter((model): model is ClientModel => model !== null)
+    }
+
     const providerConfig = await resolveProviderConfig(provider)
     if (!providerConfig) {
       return []
@@ -100,13 +109,6 @@ async function getProviderModels(
     if (providerConfig.name === "codex") {
       const codexModels = getCodexModels().data
       return codexModels
-        .map((model) => normalizeProviderModel(providerConfig.name, model))
-        .filter((model): model is ClientModel => model !== null)
-    }
-
-    if (providerConfig.name === "cloudgpt") {
-      const cloudGptModels = getCloudGptModels().data
-      return cloudGptModels
         .map((model) => normalizeProviderModel(providerConfig.name, model))
         .filter((model): model is ClientModel => model !== null)
     }

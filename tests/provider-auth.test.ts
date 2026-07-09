@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
 import {
+  resolveEffectiveProviderConfig,
   resolveProviderAuthType,
   type ResolvedProviderConfig,
 } from "~/lib/config"
@@ -104,5 +105,43 @@ describe("resolveProviderAuthType", () => {
     expect(
       resolveProviderAuthType("custom", "azure-cli", "openai-compatible"),
     ).toBe("authorization")
+  })
+})
+
+describe("resolveEffectiveProviderConfig", () => {
+  test("recomputes authType when a model override changes the type", () => {
+    const effective = resolveEffectiveProviderConfig(
+      createProviderConfig({
+        type: "anthropic",
+        authType: "x-api-key",
+        models: { "gpt-x": { type: "openai-compatible" } },
+      }),
+      "gpt-x",
+    )
+
+    expect(effective.type).toBe("openai-compatible")
+    expect(effective.authType).toBe("authorization")
+  })
+
+  test("keeps an explicitly configured authType across type overrides", () => {
+    const effective = resolveEffectiveProviderConfig(
+      createProviderConfig({
+        type: "openai-compatible",
+        authType: "authorization",
+        configuredAuthType: "authorization",
+        models: { "claude-x": { type: "anthropic" } },
+      }),
+      "claude-x",
+    )
+
+    expect(effective.type).toBe("anthropic")
+    expect(effective.authType).toBe("authorization")
+  })
+
+  test("returns the same config when no override applies", () => {
+    const providerConfig = createProviderConfig()
+    expect(resolveEffectiveProviderConfig(providerConfig, "unknown")).toBe(
+      providerConfig,
+    )
   })
 })

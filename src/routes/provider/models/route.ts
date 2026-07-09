@@ -1,5 +1,6 @@
 import { Hono } from "hono"
 
+import { getProviderConfig } from "~/lib/config"
 import { forwardError } from "~/lib/error"
 import { createHandlerLogger } from "~/lib/logger"
 import { resolveProviderConfig } from "~/lib/provider-resolver"
@@ -18,6 +19,17 @@ providerModelRoutes.get("/", async (c) => {
   const provider = c.req.param("provider") ?? ""
 
   try {
+    // The CloudGPT catalog is static; don't require a live Azure CLI token
+    // (which resolveProviderConfig would acquire) just to list it
+    if (provider.trim() === "cloudgpt" && getProviderConfig("cloudgpt")) {
+      const models = getCloudGptModels()
+      return c.json({
+        object: "list",
+        data: models.data,
+        has_more: false,
+      })
+    }
+
     const providerConfig = await resolveProviderConfig(provider)
     if (!providerConfig) {
       return c.json(
@@ -33,15 +45,6 @@ providerModelRoutes.get("/", async (c) => {
 
     if (providerConfig.name === "codex") {
       const models = getCodexModels()
-      return c.json({
-        object: "list",
-        data: models.data,
-        has_more: false,
-      })
-    }
-
-    if (providerConfig.name === "cloudgpt") {
-      const models = getCloudGptModels()
       return c.json({
         object: "list",
         data: models.data,

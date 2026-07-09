@@ -4,10 +4,16 @@ import { events } from "fetch-event-stream"
 import { streamSSE } from "hono/streaming"
 
 import { logCodexRateLimitsEvent } from "~/lib/codex-rate-limit"
+import { applyDashScopePreserveThinkingDefault } from "~/lib/dashscope"
+import {
+  applyMissingExtraBody,
+  applyProviderContextCache,
+  applyProviderStreamOptions,
+} from "~/lib/provider-payload"
 import {
   type ModelConfig,
   type ResolvedProviderConfig,
-  resolveEffectiveProviderType,
+  resolveEffectiveProviderConfig,
 } from "~/lib/config"
 import { HTTPError } from "~/lib/error"
 import { createHandlerLogger, debugJson } from "~/lib/logger"
@@ -29,7 +35,7 @@ import {
   translateOpenAIChatResponseToResponsesResult,
   translateOpenAIChatStreamChunkToResponsesEvents,
   translateResponsesPayloadToOpenAIChat,
-} from "~/routes/chat-completions/translation"
+} from "~/routes/translation/responses-to-chat"
 import type {
   ChatCompletionChunk,
   ChatCompletionResponse,
@@ -69,18 +75,19 @@ export async function handleProviderResponsesForProvider(
     return c.json(
       {
         error: {
-          message: `Provider '${provider}' does not support the /v1/responses endpoint`,
+          message: `Provider '${provider}' not found or disabled`,
           type: "invalid_request_error",
         },
       },
-      400,
+      404,
     )
   }
 
-  const effectiveType = resolveEffectiveProviderType(
+  const effectiveProviderConfig = resolveEffectiveProviderConfig(
     providerConfig,
     payload.model,
   )
+  const effectiveType = effectiveProviderConfig.type
   const modelConfig = providerConfig.models?.[payload.model]
 
   if (effectiveType === "openai-compatible") {
@@ -88,7 +95,7 @@ export async function handleProviderResponsesForProvider(
       modelConfig,
       payload,
       provider,
-      providerConfig,
+      providerConfig: effectiveProviderConfig,
     })
   }
 
@@ -210,10 +217,18 @@ const handleOpenAICompatibleProviderResponses = async (
     throw error
   }
 
+  chatPayload.temperature ??= modelConfig?.temperature
+  chatPayload.top_p ??= modelConfig?.topP
+  chatPayload.top_k ??= modelConfig?.topK
   applyMissingExtraBody(chatPayload, {
     extraBody: modelConfig?.extraBody,
   })
   applyProviderStreamOptions(chatPayload)
+  applyDashScopePreserveThinkingDefault(
+    chatPayload as unknown as Record<string, unknown>,
+    providerConfig,
+  )
+  applyProviderContextCache(chatPayload, modelConfig, providerConfig)
 
   debugJson(logger, "provider.responses.openai_compatible.request", {
     payload: chatPayload,
@@ -251,9 +266,7 @@ const handleOpenAICompatibleProviderResponses = async (
     })
   }
 
-  const chatBody = (await upstreamResponse
-    .clone()
-    .json()) as ChatCompletionResponse
+  const chatBody = (await upstreamResponse.json()) as ChatCompletionResponse
   const responsesBody = translateOpenAIChatResponseToResponsesResult(
     chatBody,
     payload,
@@ -261,28 +274,6 @@ const handleOpenAICompatibleProviderResponses = async (
   recordUsage(normalizeResponsesUsage(responsesBody.usage))
 
   return c.json(responsesBody)
-}
-
-const applyMissingExtraBody = (
-  payload: Record<string, unknown>,
-  options: { extraBody: Record<string, unknown> | undefined },
-): void => {
-  for (const [key, value] of Object.entries(options.extraBody ?? {})) {
-    if (!Object.hasOwn(payload, key)) {
-      payload[key] = value
-    }
-  }
-}
-
-const applyProviderStreamOptions = (payload: ChatCompletionsPayload): void => {
-  if (!payload.stream) {
-    return
-  }
-
-  payload.stream_options = {
-    ...(payload.stream_options ?? {}),
-    include_usage: true,
-  }
 }
 
 const streamOpenAICompatibleProviderResponses = (
@@ -331,13 +322,36 @@ const streamOpenAICompatibleProviderResponses = (
           break
         }
 
-        const parsedChunk = parseOpenAICompatibleChatStreamChunk(chunk.data)
-        if (!parsedChunk) {
+        const parsedData = parseOpenAICompatibleChatStreamData(chunk.data)
+        if (parsedData === null) {
+          continue
+        }
+
+        // OpenAI-compatible upstreams report mid-stream failures as plain
+        // `data: {"error": ...}` lines without an SSE event name
+        if (isRecord(parsedData) && isRecord(parsedData.error)) {
+          const errorEvent = createResponsesStreamErrorEvent(
+            chunk.data,
+            streamState,
+          )
+          await stream.writeSSE({
+            event: errorEvent.type,
+            data: JSON.stringify(errorEvent),
+          })
+          streamFailed = true
+          break
+        }
+
+        if (!isChatCompletionChunk(parsedData)) {
+          logger.warn(
+            "provider.responses.openai_compatible.unrecognized_chunk",
+            { data: chunk.data },
+          )
           continue
         }
 
         for (const event of translateOpenAIChatStreamChunkToResponsesEvents(
-          parsedChunk,
+          parsedData,
           streamState,
         )) {
           const nextUsage = getResponsesStreamEventUsage(event)
@@ -352,15 +366,34 @@ const streamOpenAICompatibleProviderResponses = (
       }
 
       if (!streamFailed) {
-        for (const event of finalizeOpenAIChatToResponsesStream(streamState)) {
-          const nextUsage = getResponsesStreamEventUsage(event)
-          if (nextUsage) {
-            usage = nextUsage
-          }
+        if (streamState.responseId === undefined) {
+          // Nothing usable arrived; surface an error instead of fabricating
+          // a successful empty completion
+          const errorEvent = createResponsesStreamErrorEvent(
+            JSON.stringify({
+              error: {
+                message: `Empty chat completions stream from ${options.provider}`,
+              },
+            }),
+            streamState,
+          )
           await stream.writeSSE({
-            event: event.type,
-            data: JSON.stringify(event),
+            event: errorEvent.type,
+            data: JSON.stringify(errorEvent),
           })
+        } else {
+          for (const event of finalizeOpenAIChatToResponsesStream(
+            streamState,
+          )) {
+            const nextUsage = getResponsesStreamEventUsage(event)
+            if (nextUsage) {
+              usage = nextUsage
+            }
+            await stream.writeSSE({
+              event: event.type,
+              data: JSON.stringify(event),
+            })
+          }
         }
       }
     } finally {
@@ -369,15 +402,9 @@ const streamOpenAICompatibleProviderResponses = (
   })
 }
 
-const parseOpenAICompatibleChatStreamChunk = (
-  data: string,
-): ChatCompletionChunk | null => {
+const parseOpenAICompatibleChatStreamData = (data: string): unknown => {
   try {
-    const parsed = JSON.parse(data) as unknown
-    if (isChatCompletionChunk(parsed)) {
-      return parsed
-    }
-    return null
+    return JSON.parse(data) as unknown
   } catch (error) {
     logger.error("provider.responses.openai_compatible.parse_chunk_error", {
       data,
@@ -387,11 +414,10 @@ const parseOpenAICompatibleChatStreamChunk = (
   }
 }
 
+// Lenient on purpose: some compatible providers omit `object`/`created`
 const isChatCompletionChunk = (value: unknown): value is ChatCompletionChunk =>
   isRecord(value)
-  && value.object === "chat.completion.chunk"
   && typeof value.id === "string"
-  && typeof value.created === "number"
   && typeof value.model === "string"
   && Array.isArray(value.choices)
 

@@ -6,15 +6,15 @@ import { streamSSE } from "hono/streaming"
 import {
   type ModelConfig,
   type ResolvedProviderConfig,
-  resolveEffectiveProviderType,
-  resolveProviderAuthType,
+  resolveEffectiveProviderConfig,
 } from "~/lib/config"
 import { logCodexRateLimitsEvent } from "~/lib/codex-rate-limit"
+import { applyDashScopePreserveThinkingDefault } from "~/lib/dashscope"
 import {
-  applyDashScopePreserveThinkingDefault,
-  applyOpenAICompatibleContextCache,
-  isDashScopeAliyunProvider,
-} from "~/lib/dashscope"
+  applyMissingExtraBody,
+  applyProviderContextCache,
+  applyProviderStreamOptions,
+} from "~/lib/provider-payload"
 import { HTTPError } from "~/lib/error"
 import { createHandlerLogger, debugJson } from "~/lib/logger"
 import { resolveProviderConfig } from "~/lib/provider-resolver"
@@ -34,14 +34,16 @@ import {
 import {
   type ChatStreamTranslationError,
   createChatStreamTranslationState,
-  createResponsesToChatStreamStates,
   translateAnthropicResponseToOpenAIChat,
   translateAnthropicStreamEventToOpenAIResult,
   translateOpenAIChatToAnthropicMessages,
+} from "~/routes/translation/chat-to-anthropic"
+import {
+  createResponsesToChatStreamStates,
   translateOpenAIChatToResponsesPayload,
   translateResponsesResultToOpenAIChat,
   translateResponsesStreamEventToOpenAIResult,
-} from "~/routes/chat-completions/translation"
+} from "~/routes/translation/chat-to-responses"
 import type {
   ChatCompletionChunk,
   ChatCompletionResponse,
@@ -84,10 +86,11 @@ export async function handleProviderChatCompletionsForProvider(
     )
   }
 
-  const effectiveType = resolveEffectiveProviderType(
+  const effectiveProviderConfig = resolveEffectiveProviderConfig(
     providerConfig,
     payload.model,
   )
+  const effectiveType = effectiveProviderConfig.type
   const modelConfig = providerConfig.models?.[payload.model]
   applyProviderModelDefaults(payload, modelConfig)
 
@@ -96,7 +99,7 @@ export async function handleProviderChatCompletionsForProvider(
       modelConfig,
       payload,
       provider,
-      providerConfig,
+      providerConfig: effectiveProviderConfig,
     })
   }
 
@@ -105,7 +108,7 @@ export async function handleProviderChatCompletionsForProvider(
       modelConfig,
       payload,
       provider,
-      providerConfig: getEffectiveProviderConfig(providerConfig, effectiveType),
+      providerConfig: effectiveProviderConfig,
     })
   }
 
@@ -114,7 +117,7 @@ export async function handleProviderChatCompletionsForProvider(
       modelConfig,
       payload,
       provider,
-      providerConfig: getEffectiveProviderConfig(providerConfig, effectiveType),
+      providerConfig: effectiveProviderConfig,
     })
   }
 
@@ -262,25 +265,29 @@ const handleOpenAIResponsesProviderChatCompletions = async (
   if (responsesPayload.stream) {
     const responsesStream =
       isResponsesStream(upstreamResponse) ? upstreamResponse
-      : upstreamResponse instanceof Response ? events(upstreamResponse)
+      : (
+        upstreamResponse instanceof Response
+        && (upstreamResponse.headers.get("content-type") ?? "").includes(
+          "text/event-stream",
+        )
+      ) ?
+        events(upstreamResponse)
       : null
-    if (!responsesStream) {
-      throw new HTTPError(
-        `Expected ${provider} responses stream for chat completions`,
-        new Response("", { status: 502 }),
-      )
+    if (responsesStream) {
+      return streamResponsesProviderChatCompletions(c, responsesStream, {
+        payload,
+        provider,
+        providerConfig,
+        recordUsage,
+      })
     }
-    return streamResponsesProviderChatCompletions(c, responsesStream, {
-      payload,
-      provider,
-      providerConfig,
-      recordUsage,
-    })
+    // Stream requested but the upstream answered with JSON; fall through to
+    // the non-streaming translation instead of emitting an empty stream
   }
 
   const responsesBody =
     upstreamResponse instanceof Response ?
-      ((await upstreamResponse.clone().json()) as ResponsesResult)
+      ((await upstreamResponse.json()) as ResponsesResult)
     : (upstreamResponse as ResponsesResult)
   const responseBody = translateResponsesResultToOpenAIChat(responsesBody)
   recordUsage(normalizeOpenAIUsage(responseBody.usage))
@@ -351,9 +358,7 @@ const handleAnthropicProviderChatCompletions = async (
     })
   }
 
-  const anthropicBody = (await upstreamResponse
-    .clone()
-    .json()) as AnthropicResponse
+  const anthropicBody = (await upstreamResponse.json()) as AnthropicResponse
   const responseBody = translateAnthropicResponseToOpenAIChat(anthropicBody)
   recordUsage(normalizeOpenAIUsage(responseBody.usage))
   debugJson(
@@ -371,59 +376,6 @@ const applyProviderModelDefaults = (
   payload.temperature ??= modelConfig?.temperature
   payload.top_p ??= modelConfig?.topP
   payload.top_k ??= modelConfig?.topK
-}
-
-const applyMissingExtraBody = (
-  payload: Record<string, unknown>,
-  options: { extraBody: Record<string, unknown> | undefined },
-): void => {
-  for (const [key, value] of Object.entries(options.extraBody ?? {})) {
-    if (!Object.hasOwn(payload, key)) {
-      payload[key] = value
-    }
-  }
-}
-
-const applyProviderStreamOptions = (payload: ChatCompletionsPayload): void => {
-  if (!payload.stream) {
-    return
-  }
-
-  payload.stream_options = {
-    ...(payload.stream_options ?? {}),
-    include_usage: true,
-  }
-}
-
-const applyProviderContextCache = (
-  payload: ChatCompletionsPayload,
-  modelConfig: ModelConfig | undefined,
-  providerConfig: ResolvedProviderConfig,
-): void => {
-  const isDashScopeProvider = isDashScopeAliyunProvider(providerConfig)
-  const contextCacheEnabled = modelConfig?.contextCache ?? isDashScopeProvider
-  if (contextCacheEnabled) {
-    applyOpenAICompatibleContextCache(payload)
-  }
-}
-
-const getEffectiveProviderConfig = (
-  providerConfig: ResolvedProviderConfig,
-  effectiveType: ResolvedProviderConfig["type"],
-): ResolvedProviderConfig => {
-  if (providerConfig.type === effectiveType) {
-    return providerConfig
-  }
-
-  return {
-    ...providerConfig,
-    type: effectiveType,
-    authType: resolveProviderAuthType(
-      providerConfig.name,
-      undefined,
-      effectiveType,
-    ),
-  }
 }
 
 const createProviderChatCompletionsUsageRecorder = (

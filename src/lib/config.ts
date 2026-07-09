@@ -87,6 +87,9 @@ export interface ResolvedProviderConfig {
   baseUrl: string
   apiKey: string
   authType: ProviderAuthType
+  // The valid authType explicitly set in config, if any; used to recompute
+  // authType when a per-model type override changes the effective type
+  configuredAuthType?: ProviderAuthType
   pricingCurrency?: string
   models?: Record<string, ModelConfig>
 }
@@ -653,6 +656,7 @@ export function getProviderConfig(name: string): ResolvedProviderConfig | null {
     baseUrl,
     apiKey,
     authType,
+    configuredAuthType: provider.authType === authType ? authType : undefined,
     pricingCurrency: normalizePricingCurrency(provider.pricingCurrency),
     models: provider.models,
   }
@@ -667,6 +671,28 @@ export function resolveEffectiveProviderType(
     return modelConfig.type
   }
   return providerConfig.type
+}
+
+// Applies a per-model type override to the provider config, recomputing
+// authType for the effective type while honoring an explicitly configured one.
+export function resolveEffectiveProviderConfig(
+  providerConfig: ResolvedProviderConfig,
+  model: string,
+): ResolvedProviderConfig {
+  const effectiveType = resolveEffectiveProviderType(providerConfig, model)
+  if (effectiveType === providerConfig.type) {
+    return providerConfig
+  }
+
+  return {
+    ...providerConfig,
+    type: effectiveType,
+    authType: resolveProviderAuthType(
+      providerConfig.name,
+      providerConfig.configuredAuthType,
+      effectiveType,
+    ),
+  }
 }
 
 function normalizePricingCurrency(

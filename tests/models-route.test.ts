@@ -245,4 +245,37 @@ describe("model routes", () => {
     expect(proModel?.supported_endpoints).toEqual(["/v1/responses"])
     expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  test("serves the CloudGPT catalog without acquiring an Azure CLI token", async () => {
+    // azure-cli auth with no cached token: resolveProviderConfig would spawn
+    // az, but the static catalog must not require that
+    const azureCliConfig: ResolvedProviderConfig = {
+      apiKey: "",
+      authType: "azure-cli",
+      baseUrl: "https://cloudgpt-openai.azure-api.net/openai",
+      name: "cloudgpt",
+      type: "openai-compatible",
+    }
+    enabledProviders = ["cloudgpt"]
+    providerConfigs = { cloudgpt: azureCliConfig }
+
+    const scopedResponse = await createProviderModelsApp().request(
+      "/cloudgpt/v1/models",
+    )
+    expect(scopedResponse.status).toBe(200)
+    const scopedBody = (await scopedResponse.json()) as {
+      data: Array<{ id: string }>
+    }
+    expect(scopedBody.data.length).toBeGreaterThan(0)
+
+    const aggregatedResponse = await createApp().request("/v1/models")
+    expect(aggregatedResponse.status).toBe(200)
+    const aggregatedBody = (await aggregatedResponse.json()) as {
+      data: Array<{ id: string }>
+    }
+    expect(aggregatedBody.data.map((model) => model.id)).toContain(
+      "cloudgpt/gpt-4.1-mini-20250414",
+    )
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
 })
