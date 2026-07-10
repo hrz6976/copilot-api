@@ -11,6 +11,9 @@ describe("CloudGPT model catalog", () => {
     const expectedModelIds = [
       "gpt-4.1-mini-20250414",
       "gpt-5.4-pro-20260305",
+      "gpt-5.6-sol-20260709",
+      "gpt-5.6-terra-20260709",
+      "gpt-5.6-luna-20260709",
       "gpt-5.3-codex-20260224",
       "o3-deep-research-20250626",
       "DeepSeek-V4-Pro",
@@ -22,7 +25,7 @@ describe("CloudGPT model catalog", () => {
       "sora-2-20251006",
     ]
 
-    expect(CLOUDGPT_MODEL_CATALOG).toHaveLength(79)
+    expect(CLOUDGPT_MODEL_CATALOG).toHaveLength(82)
     expect(new Set(modelIds).size).toBe(modelIds.length)
     for (const modelId of expectedModelIds) {
       expect(modelIds).toContain(modelId)
@@ -52,6 +55,30 @@ describe("CloudGPT model catalog", () => {
       vendor: "openai",
     })
     expect(byId.get("gpt-5.4-pro-20260305")?.supported_endpoints).toEqual([
+      "/v1/responses",
+    ])
+    expect(byId.get("gpt-5.6-sol-20260709")).toMatchObject({
+      capabilities: {
+        limits: {
+          max_context_window_tokens: 272_000,
+          max_output_tokens: 128_000,
+        },
+        supports: {
+          tool_calls: true,
+          vision: true,
+        },
+        type: "chat",
+      },
+      name: "GPT-5.6 Sol",
+      supported_endpoints: ["/v1/chat/completions", "/v1/responses"],
+      vendor: "openai",
+    })
+    expect(byId.get("gpt-5.6-terra-20260709")?.supported_endpoints).toEqual([
+      "/v1/chat/completions",
+      "/v1/responses",
+    ])
+    expect(byId.get("gpt-5.6-luna-20260709")?.supported_endpoints).toEqual([
+      "/v1/chat/completions",
       "/v1/responses",
     ])
     expect(byId.get("text-embedding-3-large")).toMatchObject({
