@@ -586,4 +586,123 @@ describe("provider responses backed by OpenAI-compatible chat completions", () =
     const [url] = fetchMock.mock.calls[0]
     expect(url).toBe("https://provider.example/openai/v1/responses")
   })
+
+  test("aliases CloudGPT GPT-5.6 collaboration tools and restores JSON calls", async () => {
+    fetchMock.mockImplementationOnce(
+      (_url: string | URL | Request, init?: RequestInit) => {
+        const upstreamBody = JSON.parse(init?.body as string) as {
+          tools: Array<{ name: string; type: string }>
+        }
+        expect(upstreamBody.tools[0]).toMatchObject({
+          name: "codex_collaboration",
+          type: "namespace",
+        })
+
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: "resp_gpt56",
+              object: "response",
+              created_at: 0,
+              model: "gpt-5.6-sol-20260709",
+              output: [
+                {
+                  type: "function_call",
+                  call_id: "call-1",
+                  name: "spawn_agent",
+                  namespace: "codex_collaboration",
+                  arguments: "{}",
+                  status: "completed",
+                },
+              ],
+              status: "completed",
+              usage: null,
+            }),
+            { headers: { "content-type": "application/json" } },
+          ),
+        )
+      },
+    )
+
+    const response = await createApp().request("/v1/responses", {
+      body: JSON.stringify({
+        model: "cloudgpt/gpt-5.6-sol-20260709",
+        input: "delegate this",
+        tools: [
+          {
+            type: "namespace",
+            name: "collaboration",
+            tools: [
+              {
+                type: "function",
+                name: "spawn_agent",
+                parameters: {},
+                strict: false,
+              },
+            ],
+          },
+        ],
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      output: Array<{ namespace?: string }>
+    }
+    expect(body.output[0].namespace).toBe("collaboration")
+  })
+
+  test("restores CloudGPT GPT-5.6 collaboration namespace in SSE", async () => {
+    fetchMock.mockImplementationOnce(
+      (_url: string | URL | Request, _init?: RequestInit) =>
+        Promise.resolve(
+          new Response(
+            [
+              "event: response.output_item.added",
+              `data: ${JSON.stringify({
+                type: "response.output_item.added",
+                sequence_number: 1,
+                output_index: 0,
+                item: {
+                  type: "function_call",
+                  call_id: "call-1",
+                  name: "spawn_agent",
+                  namespace: "codex_collaboration",
+                  arguments: "",
+                  status: "in_progress",
+                },
+              })}`,
+              "",
+              "data: [DONE]",
+              "",
+            ].join("\n"),
+            { headers: { "content-type": "text/event-stream" } },
+          ),
+        ),
+    )
+
+    const response = await createApp().request("/v1/responses", {
+      body: JSON.stringify({
+        model: "cloudgpt/gpt-5.6-sol-20260709",
+        input: "delegate this",
+        stream: true,
+        tools: [
+          {
+            type: "namespace",
+            name: "collaboration",
+            tools: [],
+          },
+        ],
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    const text = await response.text()
+    expect(text).toContain('"namespace":"collaboration"')
+    expect(text).not.toContain('"namespace":"codex_collaboration"')
+  })
 })

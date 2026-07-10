@@ -21,6 +21,11 @@ import { createHandlerLogger, debugJson } from "~/lib/logger"
 import { resolveProviderConfig } from "~/lib/provider-resolver"
 import { requestContext } from "~/lib/request-context"
 import {
+  aliasReservedToolNamespaces,
+  needsCloudGptReservedNamespaceCompatibility,
+  restoreReservedToolNamespaces,
+} from "~/lib/reserved-tool-namespace"
+import {
   createProviderTokenUsageRecorder,
   normalizeResponsesUsage,
   type UsageTokens,
@@ -142,6 +147,13 @@ export async function handleProviderResponsesForProvider(
     stripUnsupportedProviderResponsesInputFields(payload)
   }
 
+  const aliasReservedNamespaces = needsCloudGptReservedNamespaceCompatibility(
+    providerConfig.name,
+    payload.model,
+  )
+  const upstreamPayload =
+    aliasReservedNamespaces ? aliasReservedToolNamespaces(payload) : payload
+
   debugJson(logger, "Translated Responses request payload:", {
     contextManagement: payload.context_management,
     provider,
@@ -175,7 +187,7 @@ export async function handleProviderResponsesForProvider(
 
   const upstreamResponse = await forwardProviderResponses(
     providerConfig,
-    payload,
+    upstreamPayload,
     c.req.raw.headers,
   )
 
@@ -198,6 +210,7 @@ export async function handleProviderResponsesForProvider(
       normalizeCodex: false,
       provider,
       recordUsage,
+      restoreReservedNamespaces: aliasReservedNamespaces,
     })
   }
 
@@ -205,6 +218,10 @@ export async function handleProviderResponsesForProvider(
     .clone()
     .json()) as ResponsesResult
   recordUsage(normalizeResponsesUsage(responseBody.usage))
+
+  if (aliasReservedNamespaces) {
+    return c.json(restoreReservedToolNamespaces(responseBody))
+  }
 
   return createProviderProxyResponse(upstreamResponse)
 }
@@ -507,6 +524,7 @@ const streamProviderResponses = async (
     normalizeCodex: boolean
     provider: string
     recordUsage: (usage: UsageTokens) => void
+    restoreReservedNamespaces?: boolean
   },
 ): Promise<Response> => {
   const iterator = upstreamResponse[Symbol.asyncIterator]()
@@ -554,7 +572,13 @@ const streamProviderResponses = async (
           normalizeCodex: options.normalizeCodex,
           provider: options.provider,
         })
-        if (event && options.normalizeCodex) {
+        if (event && options.restoreReservedNamespaces) {
+          event = restoreReservedToolNamespaces(event)
+        }
+        if (
+          event
+          && (options.normalizeCodex || options.restoreReservedNamespaces)
+        ) {
           responseChunk = {
             ...chunk,
             data: JSON.stringify(event),
