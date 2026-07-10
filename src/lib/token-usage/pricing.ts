@@ -104,6 +104,21 @@ const CLOUDGPT_GPT55_PRICING: TokenUsagePricingConfig = {
     },
   ],
 }
+const CLOUDGPT_GPT56_SOL_PRICING: TokenUsagePricingConfig = {
+  cachedInput: 0.5,
+  input: 5,
+  output: 30,
+}
+const CLOUDGPT_GPT56_TERRA_PRICING: TokenUsagePricingConfig = {
+  cachedInput: 0.25,
+  input: 2.5,
+  output: 15,
+}
+const CLOUDGPT_GPT56_LUNA_PRICING: TokenUsagePricingConfig = {
+  cachedInput: 0.1,
+  input: 1,
+  output: 6,
+}
 const CLOUDGPT_GROK_FAST_PRICING: TokenUsagePricingConfig = {
   cachedInput: 0.05,
   input: 0.2,
@@ -220,6 +235,9 @@ const BUILTIN_PROVIDER_PRICING: Record<
     },
     "gpt-5.4-pro-20260305": CLOUDGPT_GPT54_PRO_PRICING,
     "gpt-5.5-20260424": CLOUDGPT_GPT55_PRICING,
+    "gpt-5.6-luna-20260709": CLOUDGPT_GPT56_LUNA_PRICING,
+    "gpt-5.6-sol-20260709": CLOUDGPT_GPT56_SOL_PRICING,
+    "gpt-5.6-terra-20260709": CLOUDGPT_GPT56_TERRA_PRICING,
     "gpt-chat-latest-20260505": CLOUDGPT_GPT52_PRICING,
     "grok-3": {
       cachedInput: 0.75,

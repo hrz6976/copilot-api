@@ -53,4 +53,29 @@ describe("token usage pricing", () => {
       total_cost_nanos: 1_775_000_000,
     })
   })
+
+  test("uses CloudGPT GPT-5.6 dated deployment pricing", () => {
+    const expectedCosts = [
+      { model: "gpt-5.6-sol-20260709", totalCostNanos: 96_000_000 },
+      { model: "gpt-5.6-terra-20260709", totalCostNanos: 48_000_000 },
+      { model: "gpt-5.6-luna-20260709", totalCostNanos: 19_200_000 },
+    ]
+
+    for (const { model, totalCostNanos } of expectedCosts) {
+      const cost = resolveTokenUsageCost({
+        cache_read_input_tokens: 2_000,
+        input_tokens: 1_000,
+        model,
+        output_tokens: 3_000,
+        providerName: "cloudgpt",
+        source: "provider",
+      })
+
+      expect(cost).toEqual({
+        currency: "USD",
+        source: "builtin",
+        total_cost_nanos: totalCostNanos,
+      })
+    }
+  })
 })

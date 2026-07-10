@@ -60,10 +60,11 @@ describe("CloudGPT model catalog", () => {
     expect(byId.get("gpt-5.6-sol-20260709")).toMatchObject({
       capabilities: {
         limits: {
-          max_context_window_tokens: 272_000,
+          max_context_window_tokens: 1_050_000,
           max_output_tokens: 128_000,
         },
         supports: {
+          reasoning_effort: ["none", "low", "medium", "high", "xhigh", "max"],
           tool_calls: true,
           vision: true,
         },
@@ -73,14 +74,34 @@ describe("CloudGPT model catalog", () => {
       supported_endpoints: ["/v1/chat/completions", "/v1/responses"],
       vendor: "openai",
     })
-    expect(byId.get("gpt-5.6-terra-20260709")?.supported_endpoints).toEqual([
-      "/v1/chat/completions",
-      "/v1/responses",
-    ])
-    expect(byId.get("gpt-5.6-luna-20260709")?.supported_endpoints).toEqual([
-      "/v1/chat/completions",
-      "/v1/responses",
-    ])
+    expect(byId.get("gpt-5.6-terra-20260709")).toMatchObject({
+      capabilities: {
+        limits: {
+          max_context_window_tokens: 1_050_000,
+          max_output_tokens: 128_000,
+        },
+        supports: {
+          tool_calls: true,
+          vision: true,
+        },
+        type: "chat",
+      },
+      supported_endpoints: ["/v1/chat/completions", "/v1/responses"],
+    })
+    expect(byId.get("gpt-5.6-luna-20260709")).toMatchObject({
+      capabilities: {
+        limits: {
+          max_context_window_tokens: 1_050_000,
+          max_output_tokens: 128_000,
+        },
+        supports: {
+          tool_calls: true,
+          vision: true,
+        },
+        type: "chat",
+      },
+      supported_endpoints: ["/v1/chat/completions", "/v1/responses"],
+    })
     expect(byId.get("text-embedding-3-large")).toMatchObject({
       capabilities: {
         type: "embeddings",
