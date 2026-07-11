@@ -24,6 +24,9 @@ await mock.module("~/lib/token", () => ({
 
 const { state } = await import("../src/lib/state")
 const { modelRoutes } = await import("../src/routes/models/route")
+const { providerModelRoutes } = await import(
+  "../src/routes/provider/models/route"
+)
 
 const originalFetch = globalThis.fetch
 
@@ -99,6 +102,12 @@ const fetchMock = mock((url: string | URL | Request, _init?: RequestInit) => {
 function createApp() {
   const app = new Hono()
   app.route("/v1/models", modelRoutes)
+  return app
+}
+
+function createProviderModelsApp() {
+  const app = new Hono()
+  app.route("/:provider/v1/models", providerModelRoutes)
   return app
 }
 
@@ -224,5 +233,83 @@ describe("model routes", () => {
     expect(headers.get("authorization")).toBe("Bearer codex-access-token")
     expect(headers.get("chatgpt-account-id")).toBe("account-123")
     expect(headers.get("accept")).toBe("*/*")
+  })
+
+  test("adds built-in CloudGPT provider models without calling upstream", async () => {
+    enabledProviders = ["cloudgpt"]
+    providerConfigs = {
+      cloudgpt: createProviderConfig(
+        "cloudgpt",
+        "https://cloudgpt-openai.azure-api.net/openai",
+      ),
+    }
+
+    const response = await createApp().request("/v1/models")
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { data: Array<{ id: string }> }
+    const modelIds = body.data.map((model) => model.id)
+    expect(modelIds).toContain("cloudgpt/gpt-4.1-mini-20250414")
+    expect(modelIds).toContain("cloudgpt/gpt-5.4-pro-20260305")
+    expect(modelIds).toContain("cloudgpt/DeepSeek-V4-Pro")
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  test("returns CloudGPT catalog from provider-scoped models route", async () => {
+    providerConfigs = {
+      cloudgpt: createProviderConfig(
+        "cloudgpt",
+        "https://cloudgpt-openai.azure-api.net/openai",
+      ),
+    }
+
+    const response = await createProviderModelsApp().request(
+      "/cloudgpt/v1/models",
+    )
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      data: Array<{ id: string; supported_endpoints?: Array<string> }>
+      has_more: boolean
+    }
+    expect(body.has_more).toBe(false)
+    const proModel = body.data.find(
+      (model) => model.id === "gpt-5.4-pro-20260305",
+    )
+    expect(proModel?.supported_endpoints).toEqual(["/v1/responses"])
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  test("serves the CloudGPT catalog without acquiring an Azure CLI token", async () => {
+    // azure-cli auth with no cached token: resolveProviderConfig would spawn
+    // az, but the static catalog must not require that
+    const azureCliConfig: ResolvedProviderConfig = {
+      apiKey: "",
+      authType: "azure-cli",
+      baseUrl: "https://cloudgpt-openai.azure-api.net/openai",
+      name: "cloudgpt",
+      type: "openai-compatible",
+    }
+    enabledProviders = ["cloudgpt"]
+    providerConfigs = { cloudgpt: azureCliConfig }
+
+    const scopedResponse = await createProviderModelsApp().request(
+      "/cloudgpt/v1/models",
+    )
+    expect(scopedResponse.status).toBe(200)
+    const scopedBody = (await scopedResponse.json()) as {
+      data: Array<{ id: string }>
+    }
+    expect(scopedBody.data.length).toBeGreaterThan(0)
+
+    const aggregatedResponse = await createApp().request("/v1/models")
+    expect(aggregatedResponse.status).toBe(200)
+    const aggregatedBody = (await aggregatedResponse.json()) as {
+      data: Array<{ id: string }>
+    }
+    expect(aggregatedBody.data.map((model) => model.id)).toContain(
+      "cloudgpt/gpt-4.1-mini-20250414",
+    )
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
