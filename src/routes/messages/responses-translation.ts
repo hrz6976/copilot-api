@@ -15,6 +15,7 @@ import { HTTPError } from "~/lib/error"
 import {
   getExtraPromptForModel,
   getReasoningEffortForModel,
+  isGpt56OrAbove,
 } from "~/lib/config"
 import { requestContext } from "~/lib/request-context"
 import { parseUserIdMetadata } from "~/lib/utils"
@@ -71,6 +72,9 @@ const COMPACTION_SIGNATURE_PREFIX = "cm1#"
 const COMPACTION_SIGNATURE_SEPARATOR = "@"
 
 export const THINKING_TEXT = "Thinking..."
+
+const resolveReasoningEffort = (payload: AnthropicMessagesPayload) =>
+  payload.output_config?.effort ?? getReasoningEffortForModel(payload.model)
 
 const buildPromptCacheKey = (
   basePromptCacheKey: string | null,
@@ -149,9 +153,9 @@ export const translateAnthropicMessagesToResponsesPayload = (
     store: false,
     parallel_tool_calls: true,
     reasoning: {
-      effort: getReasoningEffortForModel(payload.model),
+      effort: resolveReasoningEffort(payload),
       summary: "detailed",
-      context: "all_turns",
+      context: isSupportAllTurns(payload) ? "all_turns" : "auto",
     },
     include: ["reasoning.encrypted_content"],
   }
@@ -439,9 +443,8 @@ const createFileContent = (
 const createReasoningContent = (
   block: AnthropicThinkingBlock,
 ): ResponseInputReasoning => {
-  // align with vscode-copilot-chat extractThinkingData, should add id, otherwise it will cause miss cache occasionally —— the usage input cached tokens to be 0
-  // https://github.com/microsoft/vscode-copilot-chat/blob/main/src/platform/endpoint/node/responsesApi.ts#L162
-  // when use in codex cli, reasoning id is empty, so it will cause miss cache occasionally
+  // align with vscode-copilot-chat extractThinkingData, should add id
+  // https://github.com/microsoft/vscode/blob/1.128.0/extensions/copilot/src/platform/endpoint/node/responsesApi.ts#L651
   const { encryptedContent, id } = parseReasoningSignature(block.signature)
   const thinking = block.thinking === THINKING_TEXT ? "" : block.thinking
   return {
@@ -1168,4 +1171,15 @@ const convertToolResultContent = (
   }
 
   return ""
+}
+
+const isSupportAllTurns = (payload: AnthropicMessagesPayload): boolean => {
+  if (
+    payload.model === "gpt-5.4"
+    || payload.model === "gpt-5.4-mini"
+    || payload.model === "gpt-5.5"
+  ) {
+    return true
+  }
+  return isGpt56OrAbove(payload.model)
 }
