@@ -2,26 +2,21 @@ import { Hono } from "hono"
 
 import { getProviderConfig, listEnabledProviders } from "~/lib/config"
 import { forwardError } from "~/lib/error"
-import { createHandlerLogger, debugJson } from "~/lib/logger"
+import { createHandlerLogger } from "~/lib/logger"
 import { toClientModelId } from "~/lib/models"
 import { resolveProviderConfig } from "~/lib/provider-resolver"
 import { state } from "~/lib/state"
 import { getModels as getCloudGptModels } from "~/services/cloudgpt/get-models"
 import type { Model } from "~/services/copilot/get-models"
-import {
-  forwardCodexModels,
-  getModels as getCodexModels,
-} from "~/services/codex/get-models"
-import {
-  createProviderProxyResponse,
-  forwardProviderModels,
-} from "~/services/providers/provider-proxy"
+import { getModels as getCodexModels } from "~/services/codex/get-models"
+import { forwardProviderModels } from "~/services/providers/provider-proxy"
+
+import { handleCodexModelsProxy, isCodexUserAgent } from "./codex-models"
 
 export const modelRoutes = new Hono()
 
 const logger = createHandlerLogger("models-handler")
 const EPOCH_ISO = new Date(0).toISOString()
-const CODEX_USER_AGENT_PATTERN = /^codex/iu
 
 type ClientModel = Record<string, unknown> & {
   id: string
@@ -30,10 +25,6 @@ type ClientModel = Record<string, unknown> & {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-function isCodexUserAgent(userAgent: string | undefined): boolean {
-  return CODEX_USER_AGENT_PATTERN.test(userAgent?.trim() ?? "")
 }
 
 function normalizeCopilotModel(model: Model): ClientModel {
@@ -174,40 +165,10 @@ async function getAggregatedModels(
   })
 }
 
-async function logCodexModelsResponse(response: Response): Promise<void> {
-  try {
-    const responseText = await response.clone().text()
-    debugJson(logger, "models.codex.response", {
-      statusCode: response.status,
-      models: responseText,
-    })
-  } catch (error) {
-    logger.warn("models.codex.response_log_error", { error })
-  }
-}
-
 modelRoutes.get("/", async (c) => {
   try {
     if (isCodexUserAgent(c.req.header("user-agent"))) {
-      const codexProviderConfig = await resolveProviderConfig("codex")
-      if (!codexProviderConfig) {
-        return c.json(
-          {
-            error: {
-              message: "Provider 'codex' not found or disabled",
-              type: "invalid_request_error",
-            },
-          },
-          404,
-        )
-      }
-
-      const upstreamResponse = await forwardCodexModels(
-        c.req.url,
-        c.req.raw.headers,
-      )
-      await logCodexModelsResponse(upstreamResponse)
-      return createProviderProxyResponse(upstreamResponse)
+      return await handleCodexModelsProxy(c)
     }
 
     const models = await getAggregatedModels(c.req.raw.headers)

@@ -102,6 +102,7 @@ const fetchMock = mock((url: string | URL | Request, _init?: RequestInit) => {
 function createApp() {
   const app = new Hono()
   app.route("/v1/models", modelRoutes)
+  app.route("/:provider/v1/models", providerModelRoutes)
   return app
 }
 
@@ -310,6 +311,59 @@ describe("model routes", () => {
     expect(aggregatedBody.data.map((model) => model.id)).toContain(
       "cloudgpt/gpt-4.1-mini-20250414",
     )
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  test("forwards Codex clients on the provider-scoped models route", async () => {
+    providerConfigs = {
+      codex: {
+        apiKey: "codex-token",
+        authType: "oauth2",
+        baseUrl: "https://ignored.example/backend-api",
+        name: "codex",
+        type: "openai-responses",
+      },
+    }
+    state.codexAccessToken = "codex-access-token"
+    state.codexAccountId = "account-123"
+
+    const response = await createApp().request(
+      "/codex/v1/models?client=codex",
+      {
+        headers: {
+          accept: "*/*",
+          "user-agent": "codex-tui/0.144.1",
+        },
+      },
+    )
+
+    expect(response.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://chatgpt.com/backend-api/codex/models?client=codex",
+    )
+    const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers)
+    expect(headers.get("authorization")).toBe("Bearer codex-access-token")
+    expect(headers.get("chatgpt-account-id")).toBe("account-123")
+  })
+
+  test("returns built-in Codex models on the provider route without Codex UA", async () => {
+    providerConfigs = {
+      codex: {
+        apiKey: "codex-token",
+        authType: "oauth2",
+        baseUrl: "https://ignored.example/backend-api",
+        name: "codex",
+        type: "openai-responses",
+      },
+    }
+
+    const response = await createApp().request("/codex/v1/models")
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { data: Array<{ id: string }> }
+    expect(body.data.map((model) => model.id)).toContain("gpt-5.4")
+    expect(body.data.map((model) => model.id)).toContain("gpt-5.6-sol")
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })

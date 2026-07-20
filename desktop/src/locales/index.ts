@@ -143,6 +143,8 @@ export interface Locale {
     restartAppNote: string
     restartAppPrompt: string
     sectionGeneral: string
+    launchAtLogin: string
+    launchAtLoginDesc: string
     minimizeToTray: string
     minimizeToTrayDesc: string
     sectionNetwork: string
