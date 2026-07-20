@@ -9,14 +9,14 @@
     "ai-gateway",
     "multi-provider"
   ],
-  "homepage": "https://github.com/caozhiyuan/copilot-api",
-  "bugs": "https://github.com/caozhiyuan/copilot-api/issues",
+  "homepage": "https://github.com/hrz6976/copilot-api",
+  "bugs": "https://github.com/hrz6976/copilot-api/issues",
   "repository": {
     "type": "git",
-    "url": "https://github.com/caozhiyuan/copilot-api"
+    "url": "https://github.com/hrz6976/copilot-api"
   },
   "license": "MIT",
-  "author": "caozhiyuan",
+  "author": "hrz6976",
   "type": "module",
   "bin": {
     "copilot-api": "./dist/main.js"

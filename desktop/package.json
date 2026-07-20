@@ -2,7 +2,7 @@
   "name": "copilot-api-desktop",
   "version": "1.14.14",
   "description": "Copilot API Desktop App",
-  "author": "jeffreycao",
+  "author": "hrz6976",
   "desktopName": "copilot-api.desktop",
   "main": "out/main/index.js",
   "scripts": {
