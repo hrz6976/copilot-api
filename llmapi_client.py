@@ -195,20 +195,11 @@ def sample_non_streaming_chat_completion_request(llm_client, model_name):
     request_data = {
             "messages":[
                 {
-                    "role": "system",
-                    "content": "You are an expert in Python. Provide detailed information to help the user.",
-                },
-                {
                     "role": "user",
-                    "content": "How can I use the Chat Completion API?"
+                    "content": "Reply with exactly: model-ok"
                 }
             ],
-            "max_tokens":500,
-            "temperature":0.6,
-            "top_p":1,
-            "n":1,
-            "logprobs":None,
-            "stop":"\r\n"
+            "max_completion_tokens":32
     }    
  
     response = llm_client.send_request(model_name, request_data, chat_completion = True)
@@ -354,11 +345,13 @@ def sample_streaming_function_chat_completion_request(llm_client, model_name):
  
 parser = argparse.ArgumentParser(description='Async API Example')
 parser.add_argument('--endpoint', type=str, help='Endpoint URL')
+parser.add_argument('--model', type=str, default='dev-mai-code-1-flash', help='LLM API model name')
 parser.add_argument('--scenario', type=str, help='Scenario ID')
  
 args = parser.parse_args()
  
 endpoint = args.endpoint
+model_name = args.model
 scenario_id = args.scenario
 llm_client = LLMClient(endpoint)
  
@@ -369,7 +362,7 @@ llm_client = LLMClient(endpoint)
 # sample_streaming_request(llm_client, model_name = 'dev-gpt-4o-2024-05-13')
  
 # Chat Completion API samples
-sample_non_streaming_chat_completion_request(llm_client, model_name = 'dev-gpt-4o-gg')
+sample_non_streaming_chat_completion_request(llm_client, model_name = model_name)
 # sample_streaming_chat_completion_request(llm_client, model_name = 'dev-gpt-4o-2024-05-13-chat-completions')
 # sample_streaming_function_chat_completion_request(llm_client, model_name = 'dev-gpt-4o-2024-05-13-chat-completions')        
  
