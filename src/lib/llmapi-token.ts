@@ -24,6 +24,11 @@ interface LlmApiTokenOptions {
   client?: LlmApiAuthClient
 }
 
+interface SilentTokenResult {
+  account: AccountInfo
+  accessToken: string
+}
+
 const LLMAPI_BROKER_PLATFORMS: NodeJS.Platform[] = ["darwin", "win32"]
 
 let authClientRequest: Promise<LlmApiAuthClient> | undefined
@@ -89,6 +94,31 @@ function requireAccessToken(result: AuthenticationResult | null): string {
   return accessToken
 }
 
+async function tryAcquireSilentToken(
+  client: LlmApiAuthClient,
+  accounts: AccountInfo[],
+): Promise<{ lastError?: unknown; token?: SilentTokenResult }> {
+  let lastError: unknown
+  for (const account of accounts) {
+    try {
+      const result = await client.acquireTokenSilent({
+        account,
+        scopes: LLMAPI_SCOPES,
+      })
+      return {
+        token: {
+          account: result.account ?? account,
+          accessToken: requireAccessToken(result),
+        },
+      }
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  return { lastError }
+}
+
 async function acquireSilentToken(client: LlmApiAuthClient): Promise<string> {
   const accounts = await client.getAllAccounts()
   if (accounts.length === 0) {
@@ -97,17 +127,9 @@ async function acquireSilentToken(client: LlmApiAuthClient): Promise<string> {
     )
   }
 
-  let lastError: unknown
-  for (const account of accounts) {
-    try {
-      const result = await client.acquireTokenSilent({
-        account,
-        scopes: LLMAPI_SCOPES,
-      })
-      return requireAccessToken(result)
-    } catch (error) {
-      lastError = error
-    }
+  const { lastError, token } = await tryAcquireSilentToken(client, accounts)
+  if (token) {
+    return token.accessToken
   }
 
   const reason =
@@ -135,6 +157,12 @@ export async function loginLlmApi(
   options: LlmApiTokenOptions = {},
 ): Promise<{ account: AccountInfo; accessToken: string }> {
   const client = options.client ?? (await getAuthClient())
+  const accounts = await client.getAllAccounts()
+  const { token } = await tryAcquireSilentToken(client, accounts)
+  if (token) {
+    return token
+  }
+
   const result = await client.acquireTokenInteractive({
     openBrowser: () => Promise.resolve(),
     prompt: "select_account",

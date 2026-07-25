@@ -102,7 +102,26 @@ describe("LLM API token acquisition", () => {
     expect(acquireTokenSilent).toHaveBeenCalledTimes(2)
   })
 
-  test("uses interactive account selection for explicit login", async () => {
+  test("reuses an entitled broker account without opening account selection", async () => {
+    const existingAccount = account("existing@example.com")
+    const acquireTokenInteractive = mock()
+    const acquireTokenSilent = mock(() =>
+      Promise.resolve(result("silent-token", existingAccount)),
+    )
+    const client = {
+      acquireTokenInteractive,
+      acquireTokenSilent,
+      getAllAccounts: mock(() => Promise.resolve([existingAccount])),
+    } as unknown as LlmApiAuthClient
+
+    expect(await loginLlmApi({ client })).toEqual({
+      account: existingAccount,
+      accessToken: "silent-token",
+    })
+    expect(acquireTokenInteractive).not.toHaveBeenCalled()
+  })
+
+  test("uses interactive account selection when existing accounts fail", async () => {
     const selectedAccount = account("selected@example.com")
     const acquireTokenInteractive = mock(
       (_request: Parameters<LlmApiAuthClient["acquireTokenInteractive"]>[0]) =>
@@ -114,7 +133,7 @@ describe("LLM API token acquisition", () => {
     const client = {
       acquireTokenInteractive,
       acquireTokenSilent,
-      getAllAccounts: mock(),
+      getAllAccounts: mock(() => Promise.resolve([])),
     } as unknown as LlmApiAuthClient
 
     const login = await loginLlmApi({ client })
@@ -144,7 +163,7 @@ describe("LLM API token acquisition", () => {
       acquireTokenSilent: mock(() =>
         Promise.reject(new Error("broker cache unavailable")),
       ),
-      getAllAccounts: mock(),
+      getAllAccounts: mock(() => Promise.resolve([])),
     } as unknown as LlmApiAuthClient
 
     let error: unknown

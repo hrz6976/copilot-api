@@ -415,7 +415,7 @@ function logQuickProviderOnboarding(providerName: QuickProviderName): void {
       "Microsoft LLM API uses the native authentication broker on Windows and macOS.",
     )
     consola.info(
-      "Select an entitled work account. Setup is saved only after the broker confirms silent token refresh.",
+      "Checking existing broker accounts first. If needed, select an entitled work account when prompted. Setup is saved only after silent token refresh succeeds.",
     )
     return
   }
