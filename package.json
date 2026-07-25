@@ -48,6 +48,8 @@
     "rolldown": "1.0.0-rc.18"
   },
   "dependencies": {
+    "@azure/msal-node": "^5.4.1",
+    "@azure/msal-node-extensions": "^5.3.3",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "citty": "^0.1.6",
     "clipboardy": "^5.0.0",
@@ -86,5 +88,8 @@
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "trustedDependencies": [
+    "@azure/msal-node-runtime"
+  ]
 }

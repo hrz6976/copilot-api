@@ -6,6 +6,10 @@ import {
   type CloudGptChatProviderType,
   getCloudGptModelProviderType,
 } from "~/services/cloudgpt/get-models"
+import {
+  getLlmApiModel,
+  getLlmApiModelProviderType,
+} from "~/services/llmapi/get-models"
 
 import { PATHS } from "./paths"
 
@@ -44,6 +48,7 @@ export interface ContextManagementConfig {
 }
 
 export interface ModelConfig {
+  apiVersion?: string
   temperature?: number
   topP?: number
   topK?: number
@@ -71,6 +76,7 @@ export interface TokenUsagePricingConfig extends TokenUsagePricingTier {
 export type ProviderAuthType =
   | "authorization"
   | "azure-cli"
+  | "llmapi-broker"
   | "oauth2"
   | "x-api-key"
 export const SUPPORTED_PROVIDER_TYPES = [
@@ -79,6 +85,7 @@ export const SUPPORTED_PROVIDER_TYPES = [
   "openai-responses",
 ] as const
 export type ProviderType = (typeof SUPPORTED_PROVIDER_TYPES)[number]
+export type ProviderTransport = "llmapi" | "standard"
 export type ToolContentSupportType = "array" | "image" | "pdf"
 
 export interface ProviderConfig {
@@ -87,6 +94,7 @@ export interface ProviderConfig {
   baseUrl?: string
   apiKey?: string
   authType?: ProviderAuthType
+  transport?: ProviderTransport
   pricingCurrency?: string
   models?: Record<string, ModelConfig>
 }
@@ -97,6 +105,7 @@ export interface ResolvedProviderConfig {
   baseUrl: string
   apiKey: string
   authType: ProviderAuthType
+  transport?: ProviderTransport
   // The valid authType explicitly set in config, if any; used to recompute
   // authType when a per-model type override changes the effective type
   configuredAuthType?: ProviderAuthType
@@ -611,6 +620,17 @@ export function resolveProviderAuthType(
     return defaultAuthType
   }
 
+  if (authType === "llmapi-broker") {
+    if (providerName === "llmapi") {
+      return authType
+    }
+
+    consola.warn(
+      `Provider ${providerName} has authType 'llmapi-broker', which is only supported by the builtin llmapi provider, falling back to ${defaultAuthType}`,
+    )
+    return defaultAuthType
+  }
+
   if (authType === "authorization") {
     return authType
   }
@@ -628,6 +648,7 @@ function isProviderApiKeyRequired(
   return !(
     (providerName === "codex" && authType === "oauth2")
     || (providerName === "cloudgpt" && authType === "azure-cli")
+    || (providerName === "llmapi" && authType === "llmapi-broker")
   )
 }
 
@@ -727,6 +748,7 @@ export function getProviderConfig(name: string): ResolvedProviderConfig | null {
     baseUrl,
     apiKey,
     authType,
+    transport: provider.transport === "llmapi" ? "llmapi" : "standard",
     configuredAuthType: provider.authType === authType ? authType : undefined,
     pricingCurrency: normalizePricingCurrency(provider.pricingCurrency),
     models: provider.models,
@@ -755,7 +777,51 @@ export function resolveEffectiveProviderType(
     }
   }
 
+  if (providerConfig.transport === "llmapi") {
+    const catalogType =
+      getLlmApiModelProviderType(model, preferredBuiltinTypes)
+      ?? getLlmApiModelProviderType(model)
+    if (catalogType) {
+      return catalogType
+    }
+  }
+
   return providerConfig.type
+}
+
+export function getEffectiveProviderModelConfig(
+  providerConfig: ResolvedProviderConfig,
+  model: string,
+): ModelConfig | undefined {
+  const configuredModel = providerConfig.models?.[model]
+  if (providerConfig.transport !== "llmapi") {
+    return configuredModel
+  }
+
+  const catalogModel = getLlmApiModel(model)
+  if (!catalogModel) {
+    return configuredModel
+  }
+
+  const catalogConfig: ModelConfig = {
+    type: catalogModel.provider_type,
+    ...(catalogModel.pricing ? { pricing: catalogModel.pricing } : {}),
+  }
+  if (!configuredModel) {
+    return catalogConfig
+  }
+
+  return {
+    ...catalogConfig,
+    ...configuredModel,
+    pricing:
+      catalogConfig.pricing || configuredModel.pricing ?
+        {
+          ...catalogConfig.pricing,
+          ...configuredModel.pricing,
+        }
+      : undefined,
+  }
 }
 
 // Applies a per-model type override to the provider config, recomputing

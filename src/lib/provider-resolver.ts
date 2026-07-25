@@ -4,6 +4,7 @@ import {
   type ResolvedProviderConfig,
 } from "~/lib/config"
 import { getCloudGptAzureCliAccessToken } from "~/lib/cloudgpt-token"
+import { getLlmApiAccessToken } from "~/lib/llmapi-token"
 import { state } from "~/lib/state"
 import { setupCodexToken } from "~/lib/token"
 
@@ -64,6 +65,16 @@ export async function resolveProviderConfig(
       authType: "authorization",
       // Keep bearer auth even if a per-model type override recomputes authType
       configuredAuthType: "authorization",
+    }
+  }
+
+  if (
+    providerConfig.transport === "llmapi"
+    && providerConfig.authType === "llmapi-broker"
+  ) {
+    return {
+      ...providerConfig,
+      apiKey: await getLlmApiAccessToken(),
     }
   }
 

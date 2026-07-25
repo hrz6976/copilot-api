@@ -9,6 +9,7 @@ import { state } from "~/lib/state"
 import { getModels as getCloudGptModels } from "~/services/cloudgpt/get-models"
 import type { Model } from "~/services/copilot/get-models"
 import { getModels as getCodexModels } from "~/services/codex/get-models"
+import { getModels as getLlmApiModels } from "~/services/llmapi/get-models"
 import { forwardProviderModels } from "~/services/providers/provider-proxy"
 
 import { handleCodexModelsProxy, isCodexUserAgent } from "./codex-models"
@@ -101,6 +102,19 @@ async function getProviderModels(
       return cloudGptModels
         .map((model) => normalizeProviderModel("cloudgpt", model))
         .filter((model): model is ClientModel => model !== null)
+    }
+
+    if (provider.trim() === "llmapi") {
+      const llmApiConfig = getProviderConfig("llmapi")
+      if (llmApiConfig) {
+        const llmApiModels = getLlmApiModels({
+          models: llmApiConfig.models,
+          pricingCurrency: llmApiConfig.pricingCurrency,
+        }).data
+        return llmApiModels
+          .map((model) => normalizeProviderModel("llmapi", model))
+          .filter((model): model is ClientModel => model !== null)
+      }
     }
 
     const providerConfig = await resolveProviderConfig(provider)

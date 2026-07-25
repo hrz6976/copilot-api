@@ -51,10 +51,13 @@ export async function forwardError(
       errorJson = errorText
     }
     consola.error("HTTP error:", errorJson)
+    const message =
+      errorText
+      || `${error.message} (upstream returned HTTP ${error.response.status} with an empty body)`
     return c.json(
       {
         error: {
-          message: errorText,
+          message,
           type: "error",
         },
       },

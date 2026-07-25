@@ -11,6 +11,8 @@ import type { AnthropicMessagesPayload } from "~/routes/messages/anthropic-types
 import type { ChatCompletionsPayload } from "~/services/copilot/create-chat-completions"
 import type { ResponsesPayload } from "~/services/copilot/create-responses"
 
+import { getLlmApiModel } from "~/services/llmapi/get-models"
+
 const SHARED_FORWARDABLE_HEADERS = ["accept", "user-agent"] as const
 
 const ANTHROPIC_FORWARDABLE_HEADERS = [
@@ -34,6 +36,7 @@ const STRIPPED_RESPONSE_HEADERS = [
 export function buildProviderUpstreamHeaders(
   providerConfig: ResolvedProviderConfig,
   requestHeaders: Headers,
+  model?: string,
 ): Record<string, string> {
   const authHeaders: Record<string, string> = {}
   if (providerConfig.authType === "x-api-key") {
@@ -46,6 +49,18 @@ export function buildProviderUpstreamHeaders(
     "content-type": "application/json",
     accept: "application/json",
     ...authHeaders,
+  }
+
+  if (providerConfig.transport === "llmapi") {
+    if (!model) {
+      throw new Error("LLM API requests require an exact upstream model ID.")
+    }
+
+    headers["x-modeltype"] = model
+    headers["x-taxonomy-experience"] = "AppCopilots"
+    headers["x-taxonomy-agent"] = "LLMAPISampleApp"
+    headers["x-taxonomy-inferencestep"] = "InferenceTest"
+    headers["x-taxonomy-traffictype"] = "Test"
   }
 
   for (const headerName of SHARED_FORWARDABLE_HEADERS) {
@@ -66,7 +81,59 @@ export function buildProviderUpstreamHeaders(
     }
   }
 
+  if (providerConfig.transport === "llmapi" && !headers["anthropic-version"]) {
+    headers["anthropic-version"] = "2023-06-01"
+  }
+
   return headers
+}
+
+function buildProviderUrl(
+  providerConfig: ResolvedProviderConfig,
+  endpoint: "chat/completions" | "messages" | "responses",
+  model: string,
+): string {
+  const prefix = providerConfig.transport === "llmapi" ? "" : "/v1"
+  const url = `${providerConfig.baseUrl}${prefix}/${endpoint}`
+  const apiVersion = providerConfig.models?.[model]?.apiVersion?.trim()
+  return apiVersion ?
+      `${url}?api-version=${encodeURIComponent(apiVersion)}`
+    : url
+}
+
+function buildProviderPayload<T extends { model: string }>(
+  providerConfig: ResolvedProviderConfig,
+  payload: T,
+): Omit<T, "model"> | T {
+  if (providerConfig.transport !== "llmapi") {
+    return payload
+  }
+
+  const upstreamPayload = {
+    ...payload,
+  } as Record<string, unknown>
+  delete upstreamPayload.model
+
+  const compatibility = getLlmApiModel(payload.model)?.compatibility
+  if (
+    compatibility?.maxTokensParam === "max_completion_tokens"
+    && upstreamPayload.max_completion_tokens == null
+    && upstreamPayload.max_tokens != null
+  ) {
+    upstreamPayload.max_completion_tokens = upstreamPayload.max_tokens
+  }
+  if (compatibility?.maxTokensParam === "max_completion_tokens") {
+    delete upstreamPayload.max_tokens
+  }
+  for (const parameter of compatibility?.unsupportedParams ?? []) {
+    delete upstreamPayload[parameter]
+  }
+
+  if (providerConfig.type === "openai-compatible") {
+    delete upstreamPayload.stream_options
+  }
+
+  return upstreamPayload as Omit<T, "model">
 }
 
 export function createProviderProxyResponse(
@@ -92,11 +159,18 @@ export async function forwardProviderMessages(
   requestHeaders: Headers,
 ): Promise<Response> {
   consola.log(`<-- model: ${payload.model}`)
-  return await fetch(`${providerConfig.baseUrl}/v1/messages`, {
-    method: "POST",
-    headers: buildProviderUpstreamHeaders(providerConfig, requestHeaders),
-    body: JSON.stringify(payload),
-  })
+  return await fetch(
+    buildProviderUrl(providerConfig, "messages", payload.model),
+    {
+      method: "POST",
+      headers: buildProviderUpstreamHeaders(
+        providerConfig,
+        requestHeaders,
+        payload.model,
+      ),
+      body: JSON.stringify(buildProviderPayload(providerConfig, payload)),
+    },
+  )
 }
 
 export async function forwardProviderChatCompletions(
@@ -105,11 +179,18 @@ export async function forwardProviderChatCompletions(
   requestHeaders: Headers,
 ): Promise<Response> {
   consola.log(`<-- model: ${payload.model}`)
-  return await fetch(`${providerConfig.baseUrl}/v1/chat/completions`, {
-    method: "POST",
-    headers: buildProviderUpstreamHeaders(providerConfig, requestHeaders),
-    body: JSON.stringify(payload),
-  })
+  return await fetch(
+    buildProviderUrl(providerConfig, "chat/completions", payload.model),
+    {
+      method: "POST",
+      headers: buildProviderUpstreamHeaders(
+        providerConfig,
+        requestHeaders,
+        payload.model,
+      ),
+      body: JSON.stringify(buildProviderPayload(providerConfig, payload)),
+    },
+  )
 }
 
 export async function forwardProviderResponses(
@@ -118,11 +199,18 @@ export async function forwardProviderResponses(
   requestHeaders: Headers,
 ): Promise<Response> {
   consola.log(`<-- model: ${payload.model}`)
-  return await fetch(`${providerConfig.baseUrl}/v1/responses`, {
-    method: "POST",
-    headers: buildProviderUpstreamHeaders(providerConfig, requestHeaders),
-    body: JSON.stringify(payload),
-  })
+  return await fetch(
+    buildProviderUrl(providerConfig, "responses", payload.model),
+    {
+      method: "POST",
+      headers: buildProviderUpstreamHeaders(
+        providerConfig,
+        requestHeaders,
+        payload.model,
+      ),
+      body: JSON.stringify(buildProviderPayload(providerConfig, payload)),
+    },
+  )
 }
 
 export async function forwardProviderModels(

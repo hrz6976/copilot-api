@@ -106,6 +106,15 @@ describe("resolveProviderAuthType", () => {
       resolveProviderAuthType("custom", "azure-cli", "openai-compatible"),
     ).toBe("authorization")
   })
+
+  test("allows native broker auth only for LLM API", () => {
+    expect(
+      resolveProviderAuthType("llmapi", "llmapi-broker", "openai-compatible"),
+    ).toBe("llmapi-broker")
+    expect(
+      resolveProviderAuthType("custom", "llmapi-broker", "openai-compatible"),
+    ).toBe("authorization")
+  })
 })
 
 describe("resolveEffectiveProviderConfig", () => {

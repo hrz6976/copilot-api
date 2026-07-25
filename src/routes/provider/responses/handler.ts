@@ -14,6 +14,7 @@ import {
 import {
   type ModelConfig,
   type ResolvedProviderConfig,
+  getEffectiveProviderModelConfig,
   resolveEffectiveProviderConfig,
 } from "~/lib/config"
 import { HTTPError } from "~/lib/error"
@@ -102,7 +103,10 @@ export async function handleProviderResponsesForProvider(
     ["openai-responses", "openai-compatible"],
   )
   const effectiveType = effectiveProviderConfig.type
-  const modelConfig = providerConfig.models?.[payload.model]
+  const modelConfig = getEffectiveProviderModelConfig(
+    providerConfig,
+    payload.model,
+  )
 
   if (effectiveType === "openai-compatible") {
     return await handleOpenAICompatibleProviderResponses(c, {

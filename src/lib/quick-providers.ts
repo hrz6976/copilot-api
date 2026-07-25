@@ -1,4 +1,8 @@
-import type { ProviderAuthType, ProviderType } from "./config"
+import type {
+  ProviderAuthType,
+  ProviderTransport,
+  ProviderType,
+} from "./config"
 
 export interface QuickProviderConfig {
   type: ProviderType
@@ -7,6 +11,7 @@ export interface QuickProviderConfig {
   editableType: boolean
   authType?: ProviderAuthType
   requiresApiKey?: boolean
+  transport?: ProviderTransport
 }
 
 export const QUICK_PROVIDER_CONFIGS = {
@@ -37,6 +42,15 @@ export const QUICK_PROVIDER_CONFIGS = {
     editableType: false,
     authType: "azure-cli",
     requiresApiKey: false,
+  },
+  llmapi: {
+    type: "openai-compatible",
+    baseUrl: "https://fe-26.qas.bing.net/sdf",
+    pricingCurrency: "USD",
+    editableType: false,
+    authType: "llmapi-broker",
+    requiresApiKey: false,
+    transport: "llmapi",
   },
   openrouter: {
     type: "anthropic",

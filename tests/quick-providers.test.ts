@@ -31,4 +31,16 @@ describe("quick provider configs", () => {
       type: "openai-compatible",
     })
   })
+
+  test("uses native broker and transport defaults for LLM API", () => {
+    expect(QUICK_PROVIDER_CONFIGS.llmapi).toEqual({
+      authType: "llmapi-broker",
+      baseUrl: "https://fe-26.qas.bing.net/sdf",
+      editableType: false,
+      pricingCurrency: "USD",
+      requiresApiKey: false,
+      transport: "llmapi",
+      type: "openai-compatible",
+    })
+  })
 })

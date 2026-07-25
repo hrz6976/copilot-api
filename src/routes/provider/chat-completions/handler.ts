@@ -6,6 +6,7 @@ import { streamSSE, type SSEStreamingApi } from "hono/streaming"
 import {
   type ModelConfig,
   type ResolvedProviderConfig,
+  getEffectiveProviderModelConfig,
   resolveEffectiveProviderConfig,
 } from "~/lib/config"
 import { logCodexRateLimitsEvent } from "~/lib/codex-rate-limit"
@@ -92,7 +93,10 @@ export async function handleProviderChatCompletionsForProvider(
     payload.model,
   )
   const effectiveType = effectiveProviderConfig.type
-  const modelConfig = providerConfig.models?.[payload.model]
+  const modelConfig = getEffectiveProviderModelConfig(
+    providerConfig,
+    payload.model,
+  )
   applyProviderModelDefaults(payload, modelConfig)
 
   if (effectiveType === "openai-compatible") {

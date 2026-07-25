@@ -314,6 +314,61 @@ describe("model routes", () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  test("serves the LLM API catalog without acquiring a broker token", async () => {
+    const llmApiConfig: ResolvedProviderConfig = {
+      apiKey: "",
+      authType: "llmapi-broker",
+      baseUrl: "https://fe-26.qas.bing.net/sdf",
+      models: {
+        "dev-mai-code-1-flash": {
+          pricing: { input: 1.25, output: 5 },
+        },
+      },
+      name: "llmapi",
+      pricingCurrency: "USD",
+      transport: "llmapi",
+      type: "openai-compatible",
+    }
+    enabledProviders = ["llmapi"]
+    providerConfigs = { llmapi: llmApiConfig }
+
+    const scopedResponse =
+      await createProviderModelsApp().request("/llmapi/v1/models")
+    expect(scopedResponse.status).toBe(200)
+    const scopedBody = (await scopedResponse.json()) as {
+      data: Array<{
+        id: string
+        pricing?: { input?: number; output?: number }
+        pricing_currency?: string
+        pricing_estimated?: boolean
+        pricing_source_model?: string
+        pricing_source_url?: string
+      }>
+    }
+    const maiCode = scopedBody.data.find(
+      (model) => model.id === "dev-mai-code-1-flash",
+    )
+    expect(maiCode).toMatchObject({
+      pricing: { input: 1.25, output: 5 },
+      pricing_currency: "USD",
+      pricing_estimated: true,
+      pricing_source_model: "mai-code-1-flash-picker",
+    })
+    expect(maiCode?.pricing_source_url).toStartWith(
+      "https://raw.githubusercontent.com/basellm/llm-metadata/",
+    )
+
+    const aggregatedResponse = await createApp().request("/v1/models")
+    expect(aggregatedResponse.status).toBe(200)
+    const aggregatedBody = (await aggregatedResponse.json()) as {
+      data: Array<{ id: string }>
+    }
+    expect(aggregatedBody.data.map((model) => model.id)).toContain(
+      "llmapi/dev-anthropic-claude-sonnet-4-5",
+    )
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   test("forwards Codex clients on the provider-scoped models route", async () => {
     providerConfigs = {
       codex: {

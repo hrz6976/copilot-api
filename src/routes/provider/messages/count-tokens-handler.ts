@@ -1,5 +1,6 @@
 import type { Context, Env } from "hono"
 
+import { getEffectiveProviderModelConfig } from "~/lib/config"
 import { createHandlerLogger } from "~/lib/logger"
 import { resolveProviderConfig } from "~/lib/provider-resolver"
 import { createFallbackModel } from "~/lib/provider-model"
@@ -42,7 +43,7 @@ export async function handleProviderCountTokensForProvider(
     )
   }
 
-  const modelConfig = providerConfig.models?.[modelId]
+  const modelConfig = getEffectiveProviderModelConfig(providerConfig, modelId)
   const translationOptions =
     (
       providerConfig.type === "openai-compatible"

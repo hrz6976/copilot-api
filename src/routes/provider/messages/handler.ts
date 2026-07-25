@@ -23,6 +23,7 @@ import type {
 import {
   type ModelConfig,
   type ResolvedProviderConfig,
+  getEffectiveProviderModelConfig,
   resolveEffectiveProviderConfig,
 } from "~/lib/config"
 import { logCodexRateLimitsEvent } from "~/lib/codex-rate-limit"
@@ -119,7 +120,10 @@ export async function handleProviderMessagesForProvider(
   }
 
   try {
-    const modelConfig = providerConfig.models?.[payload.model]
+    const modelConfig = getEffectiveProviderModelConfig(
+      providerConfig,
+      payload.model,
+    )
     const effectiveProviderConfig = resolveEffectiveProviderConfig(
       providerConfig,
       payload.model,

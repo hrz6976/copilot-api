@@ -2,7 +2,7 @@
 
 English | [简体中文](./README.zh-CN.md)
 
-> This is a fork of [caozhiyuan/copilot-api](https://github.com/caozhiyuan/copilot-api) published as [`@hrz6976/copilot-api`](https://www.npmjs.com/package/@hrz6976/copilot-api). It adds the CloudGPT provider (Azure CLI auth, static model catalog, automatic per-model Chat Completions/Responses routing). Docker images and desktop app binaries are not published for this fork; build them locally if needed.
+> This is a fork of [caozhiyuan/copilot-api](https://github.com/caozhiyuan/copilot-api) published as [`@hrz6976/copilot-api`](https://www.npmjs.com/package/@hrz6976/copilot-api). It adds CloudGPT and Microsoft LLM API providers, including static model catalogs and automatic per-model protocol routing. Docker images and desktop app binaries are not published for this fork; build them locally if needed.
 
 ## Important Notes
 
@@ -11,7 +11,7 @@ English | [简体中文](./README.zh-CN.md)
 >
 > 1. **Claude Code configuration:** When using with Claude Code, please configure the model ID as `claude-opus-4-8`. Example claude `settings.json` see [Manual Configuration with `settings.json`](#manual-configuration-with-settingsjson). 
 >
-> 2. **Built-in `copilot`, `codex` and third-party providers:** Run `npx @hrz6976/copilot-api@latest auth` and choose `copilot`, `codex`, `deepseek`, `cloudgpt`, `custom`, or other providers.
+> 2. **Built-in `copilot`, `codex` and third-party providers:** Run `npx @hrz6976/copilot-api@latest auth` and choose `copilot`, `codex`, `deepseek`, `cloudgpt`, `llmapi`, `custom`, or another provider.
 >
 > 3. **Note:** See [GitHub Copilot Security Notice](./NOTICE.md#github-copilot-security-notice) for the warning removed from the README header.
 
@@ -30,7 +30,7 @@ On the GitHub Copilot path, the gateway prefers Copilot's native Anthropic-style
 - **OpenAI and Anthropic compatibility**: Serve `/v1/responses`, `/v1/chat/completions`, `/v1/models`, `/v1/embeddings`, and `/v1/messages` from one local gateway.
 - **Copilot is optional**: Use GitHub Copilot when credentials are present, or run the server with only configured providers.
 - **One gateway for Copilot, `codex`, and external providers**: Route GitHub Copilot, the built-in `codex` provider, and configured third-party providers behind the same endpoint.
-- **Standalone third-party providers**: Configure providers such as DashScope, DeepSeek, CloudGPT, OpenRouter, or a custom provider and start the gateway without a GitHub Copilot login.
+- **Standalone third-party providers**: Configure providers such as DashScope, DeepSeek, CloudGPT, Microsoft LLM API, OpenRouter, or a custom provider and start the gateway without a GitHub Copilot login.
 - **Provider translation on chat and Messages APIs**: `openai-compatible`, `openai-responses` (including `codex`), and Anthropic providers can serve top-level `/v1/chat/completions` through `model: "provider/model"` with request/response translation where needed; Messages APIs also translate between Anthropic-style clients and OpenAI-compatible or Responses-capable providers.
 - **Agent-friendly Claude handling on Copilot**: Prefer native `/v1/messages` when available, preserve Claude-style tool flows, support Anthropic beta features, Claude WebSearch through Responses-capable models, and keep subagent/session markers intact.
 - **Claude Code and OpenCode integration**: Works with Claude Code and OpenCode, including direct Anthropic-compatible usage through `@ai-sdk/anthropic`.
@@ -44,6 +44,7 @@ On the GitHub Copilot path, the gateway prefers Copilot's native Anthropic-style
 - GitHub account with Copilot subscription only if you want to use the GitHub Copilot provider
 - An API key, OAuth login, or CloudGPT Azure CLI login for at least one configured provider if you want to run without GitHub Copilot
 - Azure CLI logged into the CloudGPT tenant if you want to use CloudGPT: `az login --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47`
+- Windows or macOS and an entitled work account if you want to use Microsoft LLM API through the native authentication broker
 
 ## Installation
 
@@ -494,7 +495,7 @@ The following command line options are available for the `start` command:
 
 | Option       | Description               | Default | Alias |
 | ------------ | ------------------------- | ------- | ----- |
-| --provider   | Provider to log in with or configure (`copilot`, `codex`, `opencode-go`, `deepseek`, `dashscope`, `cloudgpt`, `openrouter`, or `custom`) | prompt | none |
+| --provider   | Provider to log in with or configure (`copilot`, `codex`, `opencode-go`, `deepseek`, `dashscope`, `cloudgpt`, `llmapi`, `openrouter`, or `custom`) | prompt | none |
 | --verbose    | Enable verbose logging    | false   | -v    |
 | --show-token | Show GitHub token on auth | false   | none  |
 
@@ -507,6 +508,21 @@ CloudGPT setup is API-keyless:
 1. Install Azure CLI and run `az login --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47`.
 2. Run `copilot-api auth login --provider cloudgpt` and keep the default base URL unless your CloudGPT endpoint differs.
 3. Start the proxy with `copilot-api start`. The proxy calls Azure CLI for CloudGPT access tokens, caches them in memory, and refreshes them before expiry.
+
+Microsoft LLM API setup is also API-keyless:
+
+1. On Windows or macOS, run `copilot-api auth login --provider llmapi`, select an entitled work account in the native broker, and keep the default `https://fe-26.qas.bing.net/sdf` base URL. Other operating systems reject this provider with an actionable message.
+2. Setup verifies that the selected account can acquire a token silently before writing the provider configuration or reporting success. Start the proxy after that check passes; it discovers the broker account and refreshes the device-bound LLM API token silently.
+3. Use an exact catalog ID such as `llmapi/dev-anthropic-claude-sonnet-4-5`, or configure a friendly alias without changing the upstream ID:
+   ```json
+   {
+     "modelMappings": {
+       "claude-sonnet-4-5": "llmapi/dev-anthropic-claude-sonnet-4-5"
+     }
+   }
+   ```
+
+The LLM API catalog contains 38 text-generation candidates and routes Anthropic, Chat Completions, and Responses models by metadata. Catalog presence does not grant entitlement or guarantee that every upstream route is currently deployed for your tenant. In particular, the listed GPT aliases use Responses routing, which should be validated against your environment. Every catalog entry includes an estimated USD price per 1M tokens, with cache and long-context tiers where available. These estimates come from the closest public model in [BaseLLM model metadata](https://basellm.github.io/), are not official Microsoft LLM API billing rates, and may differ from internal costs. Model discovery exposes `pricing_estimated`, `pricing_source_model`, and `pricing_source_url`; use per-model `pricing` overrides for your actual rates. When installing from source with Bun, `@azure/msal-node-runtime` must remain in `trustedDependencies` so its native broker binary is installed.
 
 Use `copilot-api auth login --provider custom` to add or update another third-party provider from the CLI. The command prompts for the provider name, supported type (`anthropic`, `openai-compatible`, or `openai-responses`), `baseUrl`, masked `apiKey`, and `authType`; `authType` may be left as the type default or set to `x-api-key` / `authorization`.
 
@@ -559,15 +575,18 @@ Use `copilot-api auth login --provider custom` to add or update another third-pa
 - **providers:** Global upstream provider map. Each provider key (for example `dashscope`) becomes a route prefix (`/dashscope/v1/messages`). Supports `type: "anthropic"`, `type: "openai-compatible"`, and `type: "openai-responses"`. Top-level clients can also use `model: "dashscope/model-id"` with `/v1/messages`, `/v1/messages/count_tokens`, `/v1/responses`, and `/v1/chat/completions`; the gateway strips the `dashscope/` prefix before forwarding upstream. `openai-compatible` providers support both chat and Messages flows: `/v1/chat/completions` is proxied to upstream `/v1/chat/completions`, while `/v1/messages` and `/:provider/v1/messages` are translated to upstream chat completions and translated back to Anthropic Messages responses. `GET /v1/models` aggregates enabled provider models with `provider/model-id` IDs; use `GET /dashscope/v1/models` for a single provider's raw model list.
   - `enabled` defaults to `true` if omitted.
   - `baseUrl` should be provider API base URL without the final endpoint. For Anthropic providers, omit `/v1/messages`; for OpenAI-compatible providers, omit `/v1/chat/completions`; for OpenAI Responses providers, omit `/v1/responses`.
-  - `apiKey` is used as the upstream credential value and is required for regular providers. It is not required for CloudGPT when `authType` is `azure-cli`.
+  - `apiKey` is used as the upstream credential value and is required for regular providers. It is not required for CloudGPT with `authType: "azure-cli"` or LLM API with `authType: "llmapi-broker"`.
   - `authType` (optional): Controls how credentials are sent upstream. Supports `x-api-key` and `authorization` for regular providers. Anthropic providers default to `x-api-key`; OpenAI-compatible and OpenAI Responses providers default to `authorization`. When set to `authorization`, the proxy sends `Authorization: Bearer <apiKey>`. `oauth2` is reserved for the built-in `codex` provider and is written automatically by `auth login --provider codex`. `azure-cli` is reserved for the built-in `cloudgpt` provider; the proxy runs `az account get-access-token --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47 --scope api://feb7b661-cac7-44a8-8dc1-163b63c23df2/.default -o json`, caches the returned access token in memory, and refreshes it before expiry.
-  - `pricingCurrency` (optional): Provider-level currency used for token cost calculation, for example `USD` or `CNY`. Quick providers default to `CNY` for DashScope and DeepSeek, and `USD` for Codex/CloudGPT/OpenRouter. Costs are grouped by currency and are not exchange-rate converted.
+  - `transport` (optional): Uses normal provider URL/header behavior by default. The built-in LLM API provider writes `transport: "llmapi"` to select taxonomy headers, exact `X-ModelType` routing, model-free request bodies, and non-`/v1` upstream paths.
+  - `llmapi-broker` is an LLM API-only `authType` that acquires device-bound tokens from the native Windows or macOS broker.
+  - `pricingCurrency` (optional): Provider-level currency used for token cost calculation, for example `USD` or `CNY`. Quick providers default to `CNY` for DashScope and DeepSeek, and `USD` for Codex/CloudGPT/LLM API/OpenRouter. Costs are grouped by currency and are not exchange-rate converted.
   - `models` (optional): Per-model configuration map. Each key is a model ID (matching the model name in requests), and the value is:
+    - `apiVersion` (optional): Adds an upstream `api-version` query parameter for that model.
     - `temperature` (optional): Default temperature value used when the request does not specify one.
     - `topP` (optional): Default top_p value used when the request does not specify one.
     - `topK` (optional): Default top_k value used when the request does not specify one.
     - `extraBody` (optional): Dynamic fields merged into the upstream request body for that model. Request body fields with the same name take precedence. OpenAI-compatible providers can use this for fields such as `enable_thinking`, `preserve_thinking`, `reasoning_effort`. `thinking_budget` is a special OpenAI-compatible provider override: when configured in `extraBody`, it is forced after Anthropic `thinking.budget_tokens` translation and overrides the request-derived budget. For providers whose name is `dashscope` or whose `baseUrl` contains `aliyuncs.com`, the request-derived `thinking_budget` (from Anthropic `thinking.budget_tokens`) is forwarded upstream; for other OpenAI-compatible providers the request-derived `thinking_budget` is stripped, while an `extraBody` `thinking_budget` is still honored. For DashScope providers, `preserve_thinking` defaults to `true` when not explicitly set in `extraBody` or the request body.
-    - `pricing` (optional): Per-model token prices, in the provider `pricingCurrency`, per 1M tokens. Supported fields are `input`, `output`, `cachedInput` (implicit cache read), `explicitCachedInput` (explicit cache read), and `cacheCreationInput`. Use `tiers` with `maxInputTokens` for input-size tiered pricing.
+    - `pricing` (optional): Per-model token prices, in the provider `pricingCurrency`, per 1M tokens. Supported fields are `input`, `output`, `cachedInput` (implicit cache read), `explicitCachedInput` (explicit cache read), and `cacheCreationInput`. Use `tiers` with `maxInputTokens` for input-size tiered pricing. LLM API catalog estimates are defaults; configured fields override the corresponding estimates.
     - `contextCache` (optional): Defaults to `true` for providers whose name is `dashscope` or whose `baseUrl` contains `aliyuncs.com`; defaults to `false` for other OpenAI-compatible providers. This enables Alibaba Cloud Model Studio/DashScope explicit context cache by injecting `cache_control: { "type": "ephemeral" }` on up to 4 content blocks using the Context Cache format. The cache breakpoint strategy matches opencode's main provider flow: the first 2 system messages plus the last 2 non-system messages. Marked string content is converted to text content part arrays for `system` / `user` / `assistant` / `tool` messages; existing array content is marked on the last part. Set this to `false` when the model already supports implicit caching, or when the upstream does not accept this explicit-cache extension field. Set this to `true` for non-DashScope providers that support the same explicit-cache extension. Applied on both `/v1/messages` and `/v1/chat/completions` routes.
     - `supportPdf` (optional): Controls whether the model supports PDF/document content. Defaults to `false`; unsupported PDFs are converted to a text notice. Set it to `true` to send PDF/document blocks as OpenAI Chat Completions file parts.
     - `toolContentSupportType` (optional): Tool result content capabilities for that model, as an array of `array`, `image`, and `pdf`. Provider routes default to string-only tool content when omitted. If `supportPdf` is `true` but this list does not include `pdf`, file parts in tool results are moved to user role messages. This provider default does not change the Copilot main flow, which continues to support array + image and not PDF.

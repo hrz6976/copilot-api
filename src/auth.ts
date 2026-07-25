@@ -11,9 +11,15 @@ import {
   SUPPORTED_PROVIDER_TYPES,
   type ProviderAuthType,
   type ProviderConfig,
+  type ProviderTransport,
   type ProviderType,
 } from "./lib/config"
 import { CLOUDGPT_AZURE_LOGIN_COMMAND } from "./lib/cloudgpt-token"
+import {
+  assertLlmApiBrokerPlatformSupported,
+  isLlmApiBrokerPlatformSupported,
+  loginLlmApi,
+} from "./lib/llmapi-token"
 import { loginCodex } from "./lib/oauth/codex"
 import { PATHS, ensurePaths } from "./lib/paths"
 import {
@@ -34,7 +40,7 @@ const authArgs = {
   provider: {
     type: "string",
     description:
-      "Provider to log in with or configure (copilot, codex, opencode-go, deepseek, dashscope, cloudgpt, openrouter, custom)",
+      "Provider to log in with or configure (copilot, codex, opencode-go, deepseek, dashscope, cloudgpt, llmapi, openrouter, custom)",
   },
   verbose: {
     alias: "v",
@@ -76,6 +82,7 @@ const AUTH_PROVIDER_LABELS: Record<AuthProviderName, string> = {
   deepseek: "DeepSeek",
   dashscope: "DashScope",
   cloudgpt: "CloudGPT",
+  llmapi: "Microsoft LLM API",
   openrouter: "OpenRouter",
   custom: "Custom provider",
 }
@@ -101,7 +108,10 @@ function isQuickProviderName(
 async function resolveProviderSelection(
   providerArg: string | undefined,
 ): Promise<AuthProviderName> {
-  const availableProviders = [...AUTH_PROVIDER_NAMES]
+  const availableProviders = AUTH_PROVIDER_NAMES.filter(
+    (providerName) =>
+      providerName !== "llmapi" || isLlmApiBrokerPlatformSupported(),
+  )
 
   if (providerArg !== undefined) {
     const providerName = providerArg.trim()
@@ -109,6 +119,9 @@ async function resolveProviderSelection(
       throw new Error(
         `Unknown provider '${providerArg}'. Expected one of: ${availableProviders.join(", ")}`,
       )
+    }
+    if (providerName === "llmapi") {
+      assertLlmApiBrokerPlatformSupported()
     }
     return providerName
   }
@@ -375,6 +388,7 @@ function buildCustomProviderConfig(
     authType?: ProviderAuthType
     baseUrl: string
     pricingCurrency?: string
+    transport?: ProviderTransport
     type: ProviderType
   },
 ): ProviderConfig {
@@ -384,6 +398,9 @@ function buildCustomProviderConfig(
     baseUrl: options.baseUrl,
     ...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
     ...(options.authType ? { authType: options.authType } : {}),
+    ...((options.transport ?? existingProviderConfig.transport) ?
+      { transport: options.transport ?? existingProviderConfig.transport }
+    : {}),
     pricingCurrency:
       options.pricingCurrency ?? existingProviderConfig.pricingCurrency,
     ...(existingProviderConfig.models ?
@@ -393,6 +410,16 @@ function buildCustomProviderConfig(
 }
 
 function logQuickProviderOnboarding(providerName: QuickProviderName): void {
+  if (providerName === "llmapi") {
+    consola.info(
+      "Microsoft LLM API uses the native authentication broker on Windows and macOS.",
+    )
+    consola.info(
+      "Select an entitled work account. Setup is saved only after the broker confirms silent token refresh.",
+    )
+    return
+  }
+
   if (providerName !== "cloudgpt") {
     return
   }
@@ -442,10 +469,16 @@ async function configureCustomProvider(): Promise<void> {
 
 async function configureQuickProvider(
   providerName: QuickProviderName,
+  options: {
+    logOnboarding?: boolean
+    logSuccess?: boolean
+  } = {},
 ): Promise<void> {
   const defaultProviderConfig: QuickProviderConfig =
     QUICK_PROVIDER_CONFIGS[providerName]
-  logQuickProviderOnboarding(providerName)
+  if (options.logOnboarding !== false) {
+    logQuickProviderOnboarding(providerName)
+  }
   const apiKey =
     defaultProviderConfig.requiresApiKey === false ?
       undefined
@@ -466,13 +499,16 @@ async function configureQuickProvider(
       authType: defaultProviderConfig.authType,
       baseUrl,
       pricingCurrency: defaultProviderConfig.pricingCurrency,
+      transport: defaultProviderConfig.transport,
       type,
     }),
   )
 
-  consola.success(
-    `${AUTH_PROVIDER_LABELS[providerName]} provider '${providerName}' written to ${PATHS.CONFIG_PATH}`,
-  )
+  if (options.logSuccess !== false) {
+    consola.success(
+      `${AUTH_PROVIDER_LABELS[providerName]} provider '${providerName}' written to ${PATHS.CONFIG_PATH}`,
+    )
+  }
 }
 
 async function loginWithCodex(): Promise<void> {
@@ -512,6 +548,21 @@ async function loginWithProvider(provider: AuthProviderName): Promise<void> {
     return
   }
 
+  if (provider === "llmapi") {
+    assertLlmApiBrokerPlatformSupported()
+    logQuickProviderOnboarding(provider)
+    const login = await loginLlmApi()
+    await configureQuickProvider(provider, {
+      logOnboarding: false,
+      logSuccess: false,
+    })
+    const accountLabel = login.account.username || login.account.homeAccountId
+    consola.success(
+      `Microsoft LLM API broker sign-in verified for ${accountLabel}; provider 'llmapi' written to ${PATHS.CONFIG_PATH}`,
+    )
+    return
+  }
+
   if (isQuickProviderName(provider)) {
     await configureQuickProvider(provider)
     return
@@ -526,7 +577,9 @@ export async function runProviderSetup(): Promise<void> {
   await loginWithProvider(provider)
 }
 
-export async function runAuthLogin(options: RunAuthOptions): Promise<void> {
+export async function runAuthLogin(
+  options: RunAuthOptions,
+): Promise<AuthProviderName> {
   const tlsModule = await import("./lib/tls")
   tlsModule.enableSystemCACompat()
 
@@ -542,6 +595,14 @@ export async function runAuthLogin(options: RunAuthOptions): Promise<void> {
 
   consola.info(`Logging in with ${AUTH_PROVIDER_LABELS[provider]}`)
   await loginWithProvider(provider)
+  return provider
+}
+
+async function runStandaloneAuthLogin(options: RunAuthOptions): Promise<void> {
+  const provider = await runAuthLogin(options)
+  if (provider === "llmapi") {
+    process.exit(0)
+  }
 }
 
 const authLogin = defineCommand({
@@ -552,7 +613,7 @@ const authLogin = defineCommand({
   },
   args: authArgs,
   run({ args }) {
-    return runAuthLogin({
+    return runStandaloneAuthLogin({
       provider: args.provider,
       verbose: args.verbose,
       showToken: args["show-token"],
@@ -574,7 +635,7 @@ export const auth = defineCommand({
       return
     }
 
-    return runAuthLogin({
+    return runStandaloneAuthLogin({
       provider: args.provider,
       verbose: args.verbose,
       showToken: args["show-token"],

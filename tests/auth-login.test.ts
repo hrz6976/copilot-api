@@ -89,9 +89,37 @@ describe("auth login validation", () => {
       'const { runAuthLogin } = await import("./src/auth"); try { await runAuthLogin({ provider: "unknown", verbose: false, showToken: false }); console.log("unexpected-success"); } catch (error) { console.log((error instanceof Error ? error.message : String(error)).trim()); }',
     )
 
+    const llmApiOption =
+      process.platform === "win32" || process.platform === "darwin" ?
+        ", llmapi"
+      : ""
     expect(output).toBe(
-      "Unknown provider 'unknown'. Expected one of: copilot, codex, opencode-go, deepseek, dashscope, cloudgpt, openrouter, custom",
+      `Unknown provider 'unknown'. Expected one of: copilot, codex, opencode-go, deepseek, dashscope, cloudgpt${llmApiOption}, openrouter, custom`,
     )
+  })
+
+  test("rejects LLM API clearly on unsupported platforms", () => {
+    const tempDir = createTempDir()
+    writeConfigFile(tempDir, {})
+
+    const output = runScript(
+      tempDir,
+      `
+      Object.defineProperty(process, "platform", { value: "linux" });
+      const { runAuthLogin } = await import("./src/auth");
+      try {
+        await runAuthLogin({ provider: "llmapi", verbose: false, showToken: false });
+        console.log("unexpected-success");
+      } catch (error) {
+        console.log(error instanceof Error ? error.message : String(error));
+      }
+      `,
+    )
+
+    expect(output).toBe(
+      "Microsoft LLM API broker authentication is not supported on linux. Use Windows or macOS.",
+    )
+    expect(readConfigFile(tempDir).providers?.llmapi).toBeUndefined()
   })
 
   test("configures deepseek from the quick provider template with defaults", () => {

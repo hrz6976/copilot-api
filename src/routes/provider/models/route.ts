@@ -10,6 +10,7 @@ import {
   isCodexUserAgent,
 } from "~/routes/models/codex-models"
 import { getModels as getCodexModels } from "~/services/codex/get-models"
+import { getModels as getLlmApiModels } from "~/services/llmapi/get-models"
 import {
   createProviderProxyResponse,
   forwardProviderModels,
@@ -32,6 +33,21 @@ providerModelRoutes.get("/", async (c) => {
         data: models.data,
         has_more: false,
       })
+    }
+
+    if (provider.trim() === "llmapi") {
+      const llmApiConfig = getProviderConfig("llmapi")
+      if (llmApiConfig) {
+        const models = getLlmApiModels({
+          models: llmApiConfig.models,
+          pricingCurrency: llmApiConfig.pricingCurrency,
+        })
+        return c.json({
+          object: "list",
+          data: models.data,
+          has_more: false,
+        })
+      }
     }
 
     const providerConfig = await resolveProviderConfig(provider)
