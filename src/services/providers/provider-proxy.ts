@@ -1,15 +1,18 @@
 import consola from "consola"
 import {
   fetch as undiciFetch,
-  getGlobalDispatcher,
-  type Dispatcher,
   type RequestInit as UndiciRequestInit,
 } from "undici"
 
 import type { ResolvedProviderConfig } from "~/lib/config"
-import type { AnthropicMessagesPayload } from "~/routes/messages/anthropic-types"
-import type { ChatCompletionsPayload } from "~/services/copilot/create-chat-completions"
-import type { ResponsesPayload } from "~/services/copilot/create-responses"
+import { requestContext } from "~/lib/request-context"
+import { createTimeoutDispatcher } from "~/lib/timeout-dispatcher"
+import type { AnthropicMessagesPayload } from "~/lib/types/anthropic"
+import type { ChatCompletionsPayload } from "~/lib/types/chat-completions"
+import type { ResponsesPayload } from "~/lib/types/responses"
+import { parseUserIdMetadata } from "~/lib/utils"
+import { getResponsesTransportConfig } from "~/lib/config"
+import { fetchResponsesWithLifecycle } from "~/services/responses-http"
 
 import { getLlmApiModel } from "~/services/llmapi/get-models"
 
@@ -101,11 +104,32 @@ function buildProviderUrl(
     : url
 }
 
+/**
+ * Azure OpenAI rejects unknown request arguments outright, so upstream-only
+ * fields (currently prompt_cache_key, used for Copilot session affinity) must
+ * be removed before forwarding. The field is still read from the original
+ * payload for session headers, so opencode-go affinity is unaffected.
+ */
+const rejectsUnknownRequestArguments = (
+  providerConfig: ResolvedProviderConfig,
+): boolean =>
+  providerConfig.name === "cloudgpt"
+  || providerConfig.authType === "azure-entra"
+
 function buildProviderPayload<T extends { model: string }>(
   providerConfig: ResolvedProviderConfig,
   payload: T,
 ): Omit<T, "model"> | T {
   if (providerConfig.transport !== "llmapi") {
+    if (
+      rejectsUnknownRequestArguments(providerConfig)
+      && "prompt_cache_key" in payload
+    ) {
+      const { prompt_cache_key: _promptCacheKey, ...rest } = payload as T & {
+        prompt_cache_key?: string
+      }
+      return rest as T
+    }
     return payload
   }
 
@@ -136,6 +160,37 @@ function buildProviderPayload<T extends { model: string }>(
   return upstreamPayload as Omit<T, "model">
 }
 
+const OPENCODE_GO_PROVIDER_NAME = "opencode-go"
+const OPENCODE_SESSION_HEADER = "x-opencode-session"
+
+const resolveOpencodeMessagesSession = (
+  payload: AnthropicMessagesPayload,
+): string | undefined => {
+  const sessionAffinity = requestContext.getStore()?.sessionAffinity?.trim()
+  if (sessionAffinity) {
+    return sessionAffinity
+  }
+
+  const userId = payload.metadata?.user_id
+  if (!userId?.trim()) {
+    return undefined
+  }
+
+  const { sessionId } = parseUserIdMetadata(userId)
+  return sessionId ?? userId
+}
+
+const applyOpencodeSessionHeader = (
+  providerConfig: ResolvedProviderConfig,
+  headers: Record<string, string>,
+  session: string | undefined,
+): void => {
+  if (providerConfig.name !== OPENCODE_GO_PROVIDER_NAME || !session) {
+    return
+  }
+  headers[OPENCODE_SESSION_HEADER] = session
+}
+
 export function createProviderProxyResponse(
   upstreamResponse: Response,
   body?: ReadableStream<Uint8Array> | null,
@@ -159,15 +214,21 @@ export async function forwardProviderMessages(
   requestHeaders: Headers,
 ): Promise<Response> {
   consola.log(`<-- model: ${payload.model}`)
+  const headers = buildProviderUpstreamHeaders(
+    providerConfig,
+    requestHeaders,
+    payload.model,
+  )
+  applyOpencodeSessionHeader(
+    providerConfig,
+    headers,
+    resolveOpencodeMessagesSession(payload),
+  )
   return await fetch(
     buildProviderUrl(providerConfig, "messages", payload.model),
     {
       method: "POST",
-      headers: buildProviderUpstreamHeaders(
-        providerConfig,
-        requestHeaders,
-        payload.model,
-      ),
+      headers,
       body: JSON.stringify(buildProviderPayload(providerConfig, payload)),
     },
   )
@@ -179,15 +240,21 @@ export async function forwardProviderChatCompletions(
   requestHeaders: Headers,
 ): Promise<Response> {
   consola.log(`<-- model: ${payload.model}`)
+  const headers = buildProviderUpstreamHeaders(
+    providerConfig,
+    requestHeaders,
+    payload.model,
+  )
+  applyOpencodeSessionHeader(
+    providerConfig,
+    headers,
+    payload.prompt_cache_key?.trim() || undefined,
+  )
   return await fetch(
     buildProviderUrl(providerConfig, "chat/completions", payload.model),
     {
       method: "POST",
-      headers: buildProviderUpstreamHeaders(
-        providerConfig,
-        requestHeaders,
-        payload.model,
-      ),
+      headers,
       body: JSON.stringify(buildProviderPayload(providerConfig, payload)),
     },
   )
@@ -197,21 +264,36 @@ export async function forwardProviderResponses(
   providerConfig: ResolvedProviderConfig,
   payload: ResponsesPayload,
   requestHeaders: Headers,
+  options: { signal?: AbortSignal } = {},
 ): Promise<Response> {
   consola.log(`<-- model: ${payload.model}`)
-  return await fetch(
+  const transportConfig = getResponsesTransportConfig()
+  const headers = buildProviderUpstreamHeaders(
+    providerConfig,
+    requestHeaders,
+    payload.model,
+  )
+  applyOpencodeSessionHeader(
+    providerConfig,
+    headers,
+    payload.prompt_cache_key?.trim() || undefined,
+  )
+  return await fetchResponsesWithLifecycle(
     buildProviderUrl(providerConfig, "responses", payload.model),
     {
       method: "POST",
-      headers: buildProviderUpstreamHeaders(
-        providerConfig,
-        requestHeaders,
-        payload.model,
-      ),
+      headers,
       body: JSON.stringify(buildProviderPayload(providerConfig, payload)),
+    },
+    {
+      headersTimeoutMs: transportConfig.headersTimeoutMs,
+      signal: options.signal,
+      streamInactivityTimeoutMs: transportConfig.streamInactivityTimeoutMs,
     },
   )
 }
+
+const PROVIDER_MODELS_TIMEOUT_MS = 15_000
 
 export async function forwardProviderModels(
   providerConfig: ResolvedProviderConfig,
@@ -220,27 +302,16 @@ export async function forwardProviderModels(
   return await fetch(`${providerConfig.baseUrl}/v1/models`, {
     method: "GET",
     headers: buildProviderUpstreamHeaders(providerConfig, requestHeaders),
+    signal: AbortSignal.timeout(PROVIDER_MODELS_TIMEOUT_MS),
   })
 }
 
 /** Align with Codex images: long-running generation/edits need a generous cap. */
 const PROVIDER_IMAGES_TIMEOUT_MS = 15 * 60 * 1000
 
-const providerImagesDispatcher = {
-  dispatch(
-    options: Dispatcher.DispatchOptions,
-    handler: Dispatcher.DispatchHandler,
-  ) {
-    return getGlobalDispatcher().dispatch(
-      {
-        ...options,
-        bodyTimeout: PROVIDER_IMAGES_TIMEOUT_MS,
-        headersTimeout: PROVIDER_IMAGES_TIMEOUT_MS,
-      },
-      handler,
-    )
-  },
-} as Dispatcher
+const providerImagesDispatcher = createTimeoutDispatcher(
+  PROVIDER_IMAGES_TIMEOUT_MS,
+)
 
 function resolveProviderRequestUrl(
   providerConfig: ResolvedProviderConfig,

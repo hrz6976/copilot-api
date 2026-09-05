@@ -94,7 +94,7 @@ describe("auth login validation", () => {
         ", llmapi"
       : ""
     expect(output).toBe(
-      `Unknown provider 'unknown'. Expected one of: copilot, codex, opencode-go, deepseek, dashscope, cloudgpt${llmApiOption}, openrouter, custom`,
+      `Unknown provider 'unknown'. Expected one of: copilot, codex, opencode-go, kimi, deepseek, dashscope, cloudgpt${llmApiOption}, openrouter, custom`,
     )
   })
 
@@ -468,6 +468,33 @@ describe("auth login validation", () => {
     expect(readConfigFile(tempDir).providers?.["opencode-go"]).toEqual({
       apiKey: "opencode-key",
       baseUrl: "https://opencode.ai/zen/go",
+      enabled: true,
+      pricingCurrency: "USD",
+      type: "openai-compatible",
+    })
+  })
+
+  test("configures kimi with openai-compatible defaults and an editable type", () => {
+    const tempDir = createTempDir()
+    writeConfigFile(tempDir, {})
+
+    runScript(
+      tempDir,
+      `
+      const consolaModule = await import("consola");
+      const consola = consolaModule.default ?? consolaModule;
+      const answers = ["kimi-key", "__default__", ""];
+      consola.prompt = async () => answers.shift();
+      consola.info = () => {};
+      consola.success = () => {};
+      const { runAuthLogin } = await import("./src/auth");
+      await runAuthLogin({ provider: "kimi", verbose: false, showToken: false });
+      `,
+    )
+
+    expect(readConfigFile(tempDir).providers?.kimi).toEqual({
+      apiKey: "kimi-key",
+      baseUrl: "https://api.kimi.com/coding",
       enabled: true,
       pricingCurrency: "USD",
       type: "openai-compatible",

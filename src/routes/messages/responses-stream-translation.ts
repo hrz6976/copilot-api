@@ -18,13 +18,11 @@ import {
   type ResponsesResult,
   type ResponseStreamEvent,
   type ResponseTextDeltaEvent,
-  type ResponseTextDoneEvent,
-} from "~/services/copilot/create-responses"
+} from "~/lib/types/responses"
 
-import { type AnthropicStreamEventData } from "./anthropic-types"
+import { type AnthropicStreamEventData } from "~/lib/types/anthropic"
 import {
   REASONING_SUMMARY_SEPARATOR,
-  THINKING_TEXT,
   encodeCompactionCarrierSignature,
   resolveToolUseName,
   translateResponsesResultToAnthropic,
@@ -130,9 +128,6 @@ export const translateResponsesStreamEvent = (
       return handleReasoningSummaryTextDone(rawEvent, state)
     }
 
-    case "response.output_text.done": {
-      return handleOutputTextDone(rawEvent, state)
-    }
     case "response.output_item.done": {
       return handleOutputItemDone(rawEvent, state)
     }
@@ -253,7 +248,7 @@ const handleOutputItemDone = (
         index: blockIndex,
         delta: {
           type: "thinking_delta",
-          thinking: THINKING_TEXT,
+          thinking: "",
         },
       })
     }
@@ -280,7 +275,6 @@ const handleOutputItemDone = (
   const blockIndex = openThinkingBlockIfNeeded(state, outputIndex, events)
   const signature = (item.encrypted_content ?? "") + "@" + item.id
   if (signature) {
-    // Compatible with opencode, it will filter out blocks where the thinking text is empty, so we add a default thinking text here
     if (
       (!item.summary || item.summary.length === 0)
       && !state.blockHasDelta.has(blockIndex)
@@ -290,7 +284,7 @@ const handleOutputItemDone = (
         index: blockIndex,
         delta: {
           type: "thinking_delta",
-          thinking: THINKING_TEXT,
+          thinking: "",
         },
       })
     }
@@ -507,35 +501,6 @@ const handleReasoningSummaryTextDone = (
       },
     })
     state.blockHasDelta.add(blockIndex)
-  }
-
-  return events
-}
-
-const handleOutputTextDone = (
-  rawEvent: ResponseTextDoneEvent,
-  state: ResponsesStreamState,
-): Array<AnthropicStreamEventData> => {
-  const events = new Array<AnthropicStreamEventData>()
-  const outputIndex = rawEvent.output_index
-  const contentIndex = rawEvent.content_index
-  const text = rawEvent.text
-
-  const blockIndex = openTextBlockIfNeeded(state, {
-    outputIndex,
-    contentIndex,
-    events,
-  })
-
-  if (text && !state.blockHasDelta.has(blockIndex)) {
-    events.push({
-      type: "content_block_delta",
-      index: blockIndex,
-      delta: {
-        type: "text_delta",
-        text,
-      },
-    })
   }
 
   return events

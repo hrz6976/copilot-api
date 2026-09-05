@@ -29,6 +29,7 @@ export type ProviderAuthType = 'authorization' | 'x-api-key'
 export type ProviderAuthTypeInput = ProviderAuthType | '__default__'
 export type QuickProviderName =
   | 'opencode-go'
+  | 'kimi'
   | 'deepseek'
   | 'dashscope'
   | 'cloudgpt'
@@ -62,12 +63,29 @@ export interface ServerAuthInfo {
   headerValue?: string
 }
 
+export interface ServerKeysConfig {
+  apiKeys: string[]
+  adminApiKey: string
+}
+
+export interface ServerKeysConfigUpdate {
+  apiKeys?: string[]
+  // undefined = leave the field untouched, '' or null = remove the admin key
+  adminApiKey?: string | null
+}
+
 export interface ModelMappingsConfig {
   configPath: string
   modelMappings: Record<string, string>
 }
 
-export type TokenUsagePeriod = 'day' | 'week' | 'month'
+export type TokenUsagePeriod =
+  | 'today'
+  | 'this_week'
+  | 'last_7_days'
+  | 'this_month'
+  | 'last_30_days'
+  | 'lifetime'
 
 export interface TokenUsageCost {
   amount: number
@@ -178,6 +196,7 @@ export interface DesktopSettings {
   enterpriseUrl: string
   lastPort: number
   launchAtLogin: boolean
+  autoStartServer: boolean
   minimizeToTray: boolean
   accountType: 'individual' | 'business' | 'enterprise'
   verbose: boolean
@@ -221,6 +240,10 @@ declare global {
         pageSize: number,
       ) => Promise<unknown>
       getServerAuthInfo: () => Promise<ServerAuthInfo>
+      getServerKeys: () => Promise<ServerKeysConfig>
+      saveServerKeys: (
+        keys: ServerKeysConfigUpdate,
+      ) => Promise<ServerKeysConfig>
       getLogs: () => Promise<string[]>
       onAuthSuccess: (callback: (result: AuthResult) => void) => () => void
       onServerStatus: (callback: (status: ServerStatus) => void) => () => void

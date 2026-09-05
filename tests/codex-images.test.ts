@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { Hono } from "hono"
 
-import type { ResolvedProviderConfig } from "../src/lib/config"
+import type { ResolvedProviderConfig } from "~/lib/config"
 
-const actualConfigModule = await import("../src/lib/config")
-const actualTokenModule = await import("../src/lib/token")
+const actualConfigModule = await import("~/lib/config")
+const actualTokenModule = await import("~/lib/token")
 
 let codexProviderConfig: ResolvedProviderConfig | null = null
 let openrouterProviderConfig: ResolvedProviderConfig | null = null
+let modelMappings: Record<string, string> = {}
 
 await mock.module("~/lib/config", () => ({
   ...actualConfigModule,
@@ -21,6 +22,7 @@ await mock.module("~/lib/config", () => ({
     if (provider === "openrouter") return openrouterProviderConfig
     return null
   },
+  resolveMappedModel: (model: string) => modelMappings[model] ?? model,
 }))
 
 await mock.module("~/lib/token", () => ({
@@ -28,17 +30,15 @@ await mock.module("~/lib/token", () => ({
   setupCodexToken: async () => {},
 }))
 
-const { state } = await import("../src/lib/state")
+const { state } = await import("~/lib/state")
 const { forwardCodexImages, resolveCodexImagesUrl } = await import(
-  "../src/services/codex/images"
+  "~/services/codex/images"
 )
 const { imageRouteDependencies, imageRoutes } = await import(
-  "../src/routes/images/route"
+  "~/routes/images/route"
 )
-const { providerImageRoutes } = await import(
-  "../src/routes/provider/images/route"
-)
-const { server } = await import("../src/server")
+const { providerImageRoutes } = await import("~/routes/provider/images/route")
+const { server } = await import("~/server")
 
 const originalDebugJsonAsync = imageRouteDependencies.debugJsonAsync
 let debugValues: Array<unknown> = []
@@ -98,6 +98,7 @@ beforeEach(() => {
     name: "openrouter",
     type: "openai-compatible",
   }
+  modelMappings = {}
   state.codexAccessToken = "codex-access-token"
   state.codexAccountId = "account-123"
   state.verbose = false
@@ -189,6 +190,88 @@ describe("Codex images forwarding", () => {
     expect(await new Response(init?.body).json()).toEqual(payload)
   })
 
+  test("rewrites a mapped JSON generation model before forwarding to Codex", async () => {
+    modelMappings = {
+      "image-model": "gpt-image-2",
+    }
+
+    const response = await createApp().request("/v1/images/generations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "image-model",
+        prompt: "mapped Codex image",
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe("https://chatgpt.com/backend-api/codex/images/generations")
+    expect(await new Response(init?.body).json()).toEqual({
+      model: "gpt-image-2",
+      prompt: "mapped Codex image",
+    })
+  })
+
+  test("routes a mapped JSON generation model to its configured provider", async () => {
+    codexProviderConfig = null
+    modelMappings = {
+      "image-model": "openrouter/black-forest-labs/flux-1.1-pro",
+    }
+
+    const response = await createApp().request(
+      "/v1/images/generations?output=base64",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: "image-model",
+          prompt: "mapped provider image",
+        }),
+      },
+    )
+
+    expect(response.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe(
+      "https://openrouter.example/v1/images/generations?output=base64",
+    )
+    const headers = new Headers(init?.headers)
+    expect(headers.get("authorization")).toBe("Bearer openrouter-key")
+    expect(headers.has("chatgpt-account-id")).toBe(false)
+    expect(await new Response(init?.body).json()).toEqual({
+      model: "black-forest-labs/flux-1.1-pro",
+      prompt: "mapped provider image",
+    })
+  })
+
+  test("forwards the original model to Codex when the mapped provider is unavailable", async () => {
+    openrouterProviderConfig = null
+    modelMappings = {
+      "image-model": "openrouter/black-forest-labs/flux-1.1-pro",
+    }
+
+    const response = await createApp().request("/v1/images/generations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "image-model",
+        prompt: "fallback to original model",
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe("https://chatgpt.com/backend-api/codex/images/generations")
+    const headers = new Headers(init?.headers)
+    expect(headers.get("authorization")).toBe("Bearer codex-access-token")
+    expect(await new Response(init?.body).json()).toEqual({
+      model: "image-model",
+      prompt: "fallback to original model",
+    })
+  })
+
   test("preserves multipart fields and file bytes for image edits", async () => {
     state.verbose = true
     const formData = new FormData()
@@ -232,6 +315,51 @@ describe("Codex images forwarding", () => {
     expect(image.type).toBe("image/png")
     expect(await image.text()).toBe("source-image-bytes")
     expect(debugJsonAsyncMock).not.toHaveBeenCalled()
+  })
+
+  test("routes a mapped multipart edit model to its configured provider", async () => {
+    modelMappings = {
+      "edit-model": "openrouter/black-forest-labs/flux-kontext-pro",
+    }
+    const formData = new FormData()
+    formData.set("model", "edit-model")
+    formData.set("prompt", "mapped provider edit")
+    formData.set(
+      "image",
+      new Blob(["mapped-source-image"], { type: "image/png" }),
+      "mapped-source.png",
+    )
+
+    const response = await createApp().request("/v1/images/edits", {
+      method: "POST",
+      body: formData,
+    })
+
+    expect(response.status).toBe(200)
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe("https://openrouter.example/v1/images/edits")
+    const headers = new Headers(init?.headers)
+    expect(headers.get("authorization")).toBe("Bearer openrouter-key")
+    expect(headers.get("content-type")).toStartWith(
+      "multipart/form-data; boundary=",
+    )
+
+    const forwardedFormData = await new Response(init?.body, {
+      headers,
+    }).formData()
+    expect(forwardedFormData.get("model")).toBe(
+      "black-forest-labs/flux-kontext-pro",
+    )
+    expect(forwardedFormData.get("prompt")).toBe("mapped provider edit")
+    const image = forwardedFormData.get("image")
+    expect(image).not.toBeNull()
+    expect(typeof image).not.toBe("string")
+    if (image === null || typeof image === "string") {
+      throw new Error("Expected the forwarded image to be a file")
+    }
+    expect(image.name).toBe("mapped-source.png")
+    expect(image.type).toBe("image/png")
+    expect(await image.text()).toBe("mapped-source-image")
   })
 
   test("adds JSON defaults when request headers are absent", async () => {

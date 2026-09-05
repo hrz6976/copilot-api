@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 
-import { QUICK_PROVIDER_CONFIGS } from "../src/lib/quick-providers"
+import { QUICK_PROVIDER_CONFIGS } from "~/lib/quick-providers"
 
 describe("quick provider configs", () => {
   test("uses Anthropic defaults for DeepSeek", () => {
@@ -40,6 +40,15 @@ describe("quick provider configs", () => {
       pricingCurrency: "USD",
       requiresApiKey: false,
       transport: "llmapi",
+      type: "openai-compatible",
+    })
+  })
+
+  test("uses OpenAI-compatible defaults for Kimi", () => {
+    expect(QUICK_PROVIDER_CONFIGS.kimi).toEqual({
+      baseUrl: "https://api.kimi.com/coding",
+      editableType: true,
+      pricingCurrency: "USD",
       type: "openai-compatible",
     })
   })

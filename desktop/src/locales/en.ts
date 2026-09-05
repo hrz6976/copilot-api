@@ -18,6 +18,7 @@ const en: Locale = {
     providerDashscope: 'DashScope',
     providerDeepseek: 'DeepSeek',
     providerInvalid: 'Invalid provider configuration, please try again',
+    providerKimi: 'Kimi',
     providerName: 'Provider name',
     providerOpencodeGo: 'OpenCode Go',
     providerOpenrouter: 'OpenRouter',
@@ -76,9 +77,12 @@ const en: Locale = {
     tokenUsageModelBreakdown: 'Model breakdown',
     tokenUsageOutput: 'Output',
     tokenUsagePage: 'Page {{page}} / {{total}}',
-    tokenUsagePeriodDay: 'Day',
-    tokenUsagePeriodMonth: '30 days',
-    tokenUsagePeriodWeek: '7 days',
+    tokenUsagePeriodToday: 'Today',
+    tokenUsagePeriodThisWeek: 'This week',
+    tokenUsagePeriodLast7Days: '7 days',
+    tokenUsagePeriodThisMonth: 'This month',
+    tokenUsagePeriodLast30Days: '30 days',
+    tokenUsagePeriodLifetime: 'Lifetime',
     tokenUsageProvider: 'Provider',
     tokenUsageRequests: 'Requests',
     tokenUsageSession: 'Session',
@@ -153,8 +157,21 @@ const en: Locale = {
     launchAtLogin: 'Launch at login',
     launchAtLoginDesc:
       'Launch Copilot API when you sign in; starts hidden when Minimize to tray is enabled',
+    autoStartServer: 'Start server on launch',
+    autoStartServerDesc:
+      'Automatically start the API server on the last used port after authorization loads',
     minimizeToTray: 'Minimize to tray',
     minimizeToTrayDesc: "Hide to system tray when closing, don't quit",
+    sectionSecurity: 'Security',
+    serverKeysNote:
+      'API Keys and Admin Key are stored in config.json. Restart the running service to apply changes.',
+    apiKeysLabel: 'API Keys',
+    apiKeysDesc:
+      'One API key per line. Clients authenticate with one of these keys via x-api-key or Authorization: Bearer.',
+    adminKeyLabel: 'Admin Key',
+    adminKeyPlaceholder: 'Enter a new Admin Key (optional)',
+    adminKeyDesc:
+      'Used for /admin/* endpoints. Leave empty to remove it; the next server start generates a new one automatically.',
     sectionNetwork: 'Network',
     proxySystemNote:
       'System proxy is used by default. When custom proxy is selected, Electron and newly started local services use the settings below; when no proxy is selected, network requests connect directly. Restart any running service to apply changes.',

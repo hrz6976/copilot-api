@@ -9,7 +9,7 @@ import type {
   ChatCompletionResponse,
   ChatCompletionsPayload,
   Message,
-} from "~/services/copilot/create-chat-completions"
+} from "~/lib/types/chat-completions"
 import type {
   FunctionTool,
   ResponseInputContent,
@@ -21,7 +21,7 @@ import type {
   Tool as ResponsesTool,
   ToolChoiceFunction,
   ToolChoiceOptions,
-} from "~/services/copilot/create-responses"
+} from "~/lib/types/responses"
 
 import {
   type ChatStreamTranslationResult,

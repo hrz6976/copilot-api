@@ -4,7 +4,7 @@ import type {
   ChatCompletionsPayload,
   ContentPart,
   Message,
-} from "~/services/copilot/create-chat-completions"
+} from "~/lib/types/chat-completions"
 import type {
   ResponseFunctionCallOutputItem,
   ResponseFunctionToolCallItem,
@@ -19,7 +19,7 @@ import type {
   ResponsesResult,
   ResponseStreamEvent,
   ResponseUsage,
-} from "~/services/copilot/create-responses"
+} from "~/lib/types/responses"
 
 import { isRecord, nowSeconds, type OpenAIFinishReason } from "./utils"
 

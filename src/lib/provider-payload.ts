@@ -1,5 +1,5 @@
 import type { ModelConfig, ResolvedProviderConfig } from "~/lib/config"
-import type { ChatCompletionsPayload } from "~/services/copilot/create-chat-completions"
+import type { ChatCompletionsPayload } from "~/lib/types/chat-completions"
 
 import {
   applyOpenAICompatibleContextCache,

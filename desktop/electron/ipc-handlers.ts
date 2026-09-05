@@ -30,6 +30,10 @@ import {
 } from './server-manager'
 import { readSettings, writeSettings } from './settings-store'
 import { runSettingsTransaction } from './settings-transaction'
+import {
+  readServerKeysConfig,
+  writeServerKeysConfig,
+} from './server-auth-config'
 import type {
   DesktopAuthMode,
   DesktopProxySettings,
@@ -37,6 +41,7 @@ import type {
   ModelMappingsConfig,
   ProviderAuthInput,
   ServerAuthInfo,
+  ServerKeysConfigUpdate,
 } from '../src/types/ipc'
 
 interface ConfigApiErrorResponse {
@@ -315,6 +320,12 @@ export function registerIpcHandlers(
     },
   )
 
+  ipcMain.handle('auth:get-server-keys', () => readServerKeysConfig())
+  ipcMain.handle(
+    'auth:save-server-keys',
+    (_event, keys: ServerKeysConfigUpdate) => writeServerKeysConfig(keys),
+  )
+
   // Shell: Open the system browser
   ipcMain.handle('shell:open-url', async (_event, url: string) => {
     await shell.openExternal(url)
@@ -351,10 +362,18 @@ export function registerIpcHandlers(
     }
   })
 
+  const TOKEN_USAGE_PERIODS = new Set([
+    'today',
+    'this_week',
+    'last_7_days',
+    'this_month',
+    'last_30_days',
+    'lifetime',
+  ])
+
   ipcMain.handle('server:fetch-token-usage', async (_event, period: string) => {
     const port = getPort()
-    const normalizedPeriod =
-      period === 'week' || period === 'month' ? period : 'day'
+    const normalizedPeriod = TOKEN_USAGE_PERIODS.has(period) ? period : 'today'
     try {
       const headers = await getServerRequestHeaders()
       const res = await fetch(
@@ -376,7 +395,7 @@ export function registerIpcHandlers(
     async (_event, period: string) => {
       const port = getPort()
       const normalizedPeriod =
-        period === 'week' || period === 'month' ? period : 'day'
+        TOKEN_USAGE_PERIODS.has(period) ? period : 'today'
       try {
         const headers = await getServerRequestHeaders()
         const res = await fetch(
@@ -399,7 +418,7 @@ export function registerIpcHandlers(
     async (_event, period: string, page: number, pageSize: number) => {
       const port = getPort()
       const normalizedPeriod =
-        period === 'week' || period === 'month' ? period : 'day'
+        TOKEN_USAGE_PERIODS.has(period) ? period : 'today'
       const normalizedPage =
         Number.isFinite(page) && page > 0 ? Math.floor(page) : 1
       const normalizedPageSize =

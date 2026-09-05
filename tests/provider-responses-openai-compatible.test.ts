@@ -155,9 +155,6 @@ describe("provider responses backed by OpenAI-compatible chat completions", () =
               },
             ],
           },
-          {
-            type: "web_search",
-          },
         ],
         tool_choice: {
           type: "function",
@@ -181,7 +178,7 @@ describe("provider responses backed by OpenAI-compatible chat completions", () =
     })
 
     const upstreamBody = JSON.parse((init as RequestInit).body as string) as {
-      max_tokens: number
+      max_completion_tokens: number
       messages: Array<{
         role: string
         content: unknown
@@ -193,7 +190,7 @@ describe("provider responses backed by OpenAI-compatible chat completions", () =
       tools: Array<{ function: { name: string }; type: string }>
     }
     expect(upstreamBody.model).toBe("deepseek-chat")
-    expect(upstreamBody.max_tokens).toBe(128)
+    expect(upstreamBody.max_completion_tokens).toBe(128)
     expect(upstreamBody.tools[0]).toMatchObject({
       type: "function",
       function: { name: "lookup" },
@@ -209,12 +206,13 @@ describe("provider responses backed by OpenAI-compatible chat completions", () =
     })
     expect(upstreamBody.messages).toMatchObject([
       { role: "system", content: "system prompt" },
-      { role: "user", content: "hello" },
+      { role: "user", content: [{ type: "text", text: "hello" }] },
       {
         role: "assistant",
-        content: null,
+        content: "",
         tool_calls: [{ id: "call-1" }, { id: "call-2" }],
       },
+      { role: "user", content: "tool ordering note" },
       {
         role: "tool",
         tool_call_id: "call-1",
@@ -225,13 +223,13 @@ describe("provider responses backed by OpenAI-compatible chat completions", () =
         tool_call_id: "call-2",
         content: "search result",
       },
-      { role: "system", content: "tool ordering note" },
     ])
 
     expect(await response.json()).toMatchObject({
       id: "resp_chatcmpl-test",
       object: "response",
-      model: "deepseek-chat",
+      // The Messages adapter echoes the client-facing provider/model alias.
+      model: "cloudgpt/deepseek-chat",
       output_text: "responses via chat",
       status: "completed",
       output: [

@@ -6,9 +6,9 @@ import { streamSSE, type SSEMessage } from "hono/streaming"
 import { resolveMappedModel } from "~/lib/config"
 import { getStreamErrorMessage } from "~/lib/error"
 import { createHandlerLogger, debugJson } from "~/lib/logger"
-import { parseProviderModelAlias } from "~/lib/provider-model"
+import { findEndpointModel } from "~/lib/models"
 import { applyGptModelTokenLimitParam } from "~/lib/provider-payload"
-import { state } from "~/lib/state"
+import { resolveConfiguredProviderModelAlias } from "~/lib/provider-resolver"
 import {
   createCopilotTokenUsageRecorder,
   normalizeOpenAIUsage,
@@ -17,12 +17,12 @@ import {
 } from "~/lib/token-usage"
 import { generateRequestIdFromPayload, getUUID, isNullish } from "~/lib/utils"
 import { handleProviderChatCompletionsForProvider } from "~/routes/provider/chat-completions/handler"
-import {
-  createChatCompletions,
-  type ChatCompletionChunk,
-  type ChatCompletionResponse,
-  type ChatCompletionsPayload,
-} from "~/services/copilot/create-chat-completions"
+import type {
+  ChatCompletionChunk,
+  ChatCompletionResponse,
+  ChatCompletionsPayload,
+} from "~/lib/types/chat-completions"
+import { createChatCompletions } from "~/services/copilot/create-chat-completions"
 
 const logger = createHandlerLogger("chat-completions-handler")
 
@@ -36,7 +36,9 @@ export async function handleCompletion(c: Context) {
     )
   }
 
-  const providerModelAlias = parseProviderModelAlias(payload.model)
+  const providerModelAlias = await resolveConfiguredProviderModelAlias(
+    payload.model,
+  )
   if (providerModelAlias) {
     payload.model = providerModelAlias.model
     return await handleProviderChatCompletionsForProvider(c, {
@@ -47,10 +49,8 @@ export async function handleCompletion(c: Context) {
 
   debugJson(logger, "Request payload:", payload)
 
-  // Find the selected model
-  const selectedModel = state.models?.data.find(
-    (model) => model.id === payload.model,
-  )
+  const selectedModel = findEndpointModel(payload.model)
+  payload.model = selectedModel?.id ?? payload.model
 
   if (
     isNullish(payload.max_tokens)
@@ -58,7 +58,7 @@ export async function handleCompletion(c: Context) {
   ) {
     payload = {
       ...payload,
-      max_tokens: selectedModel?.capabilities.limits.max_output_tokens,
+      max_tokens: selectedModel?.capabilities?.limits?.max_output_tokens,
     }
     debugJson(logger, "Set max_tokens to:", payload.max_tokens)
   }

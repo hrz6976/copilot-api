@@ -12,13 +12,13 @@ import type {
   AnthropicToolResultContentBlock,
   AnthropicToolResultBlock,
   AnthropicUserContentBlock,
-} from "~/routes/messages/anthropic-types"
+} from "~/lib/types/anthropic"
 import type {
   ChatCompletionChunk,
   ChatCompletionResponse,
   ChatCompletionsPayload,
   Message,
-} from "~/services/copilot/create-chat-completions"
+} from "~/lib/types/chat-completions"
 
 import {
   getTextFromOpenAIContent,

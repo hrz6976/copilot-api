@@ -13,7 +13,6 @@ import { logCodexRateLimitsEvent } from "~/lib/codex-rate-limit"
 import { applyDashScopePreserveThinkingDefault } from "~/lib/dashscope"
 import {
   applyGptModelTokenLimitParam,
-  applyMissingExtraBody,
   applyProviderContextCache,
   applyProviderStreamOptions,
 } from "~/lib/provider-payload"
@@ -28,7 +27,7 @@ import {
 import type {
   AnthropicResponse,
   AnthropicStreamEventData,
-} from "~/routes/messages/anthropic-types"
+} from "~/lib/types/anthropic"
 import {
   applyResponsesApiContextManagement,
   compactInputByLatestCompaction,
@@ -50,20 +49,24 @@ import type {
   ChatCompletionChunk,
   ChatCompletionResponse,
   ChatCompletionsPayload,
-} from "~/services/copilot/create-chat-completions"
+} from "~/lib/types/chat-completions"
 import { forwardCodexResponses } from "~/services/codex/create-responses"
 import { getModels as getCodexModels } from "~/services/codex/get-models"
 import type {
   ResponsesResult,
   ResponsesStream,
   ResponseStreamEvent,
-} from "~/services/copilot/create-responses"
+} from "~/lib/types/responses"
 import {
   createProviderProxyResponse,
   forwardProviderChatCompletions,
   forwardProviderMessages,
   forwardProviderResponses,
 } from "~/services/providers/provider-proxy"
+import {
+  applyMissingExtraBody,
+  applyModelDefaults,
+} from "~/routes/provider/utils"
 
 const logger = createHandlerLogger("provider-chat-completions-handler")
 
@@ -97,7 +100,7 @@ export async function handleProviderChatCompletionsForProvider(
     providerConfig,
     payload.model,
   )
-  applyProviderModelDefaults(payload, modelConfig)
+  applyModelDefaults(payload, modelConfig)
 
   if (effectiveType === "openai-compatible") {
     return await handleOpenAICompatibleProviderChatCompletions(c, {
@@ -378,15 +381,6 @@ const handleAnthropicProviderChatCompletions = async (
     responseBody,
   )
   return c.json(responseBody)
-}
-
-const applyProviderModelDefaults = (
-  payload: ChatCompletionsPayload,
-  modelConfig: ModelConfig | undefined,
-): void => {
-  payload.temperature ??= modelConfig?.temperature
-  payload.top_p ??= modelConfig?.topP
-  payload.top_k ??= modelConfig?.topK
 }
 
 const createProviderChatCompletionsUsageRecorder = (

@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test"
 
-import type { AnthropicStreamEventData } from "../src/routes/messages/anthropic-types"
+import type { AnthropicStreamEventData } from "../src/lib/types/anthropic"
 import type {
   ChatCompletionChunk,
   ChatCompletionResponse,
   ChatCompletionsPayload,
-} from "../src/services/copilot/create-chat-completions"
-import type { ResponsesPayload } from "../src/services/copilot/create-responses"
+} from "../src/lib/types/chat-completions"
+import type { ResponsesPayload } from "../src/lib/types/responses"
 
 import {
   createChatStreamTranslationState,

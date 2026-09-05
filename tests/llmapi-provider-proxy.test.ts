@@ -125,3 +125,98 @@ describe("LLM API provider transport", () => {
     })
   })
 })
+
+describe("Azure-backed provider payloads", () => {
+  const createAzureConfig = (
+    overrides: Partial<ResolvedProviderConfig> = {},
+  ): ResolvedProviderConfig => ({
+    apiKey: "azure-token",
+    authType: "authorization",
+    baseUrl: "https://cloudgpt-openai.azure-api.net/openai",
+    configuredAuthType: "authorization",
+    name: "cloudgpt",
+    transport: "standard",
+    type: "openai-compatible",
+    ...overrides,
+  })
+
+  test("strips prompt_cache_key, which Azure rejects as an unknown argument", async () => {
+    const fetchMock = mock(
+      (_url: string | URL | Request, _init?: RequestInit) =>
+        Promise.resolve(Response.json({ ok: true })),
+    )
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    await forwardProviderChatCompletions(
+      createAzureConfig(),
+      {
+        model: "deepseek-v4-pro",
+        messages: [{ role: "user", content: "hello" }],
+        prompt_cache_key: "session-1",
+      },
+      new Headers(),
+    )
+
+    const body = parseJsonBody(fetchMock.mock.calls[0]?.[1]?.body) as Record<
+      string,
+      unknown
+    >
+    expect(body).not.toHaveProperty("prompt_cache_key")
+    expect(body.model).toBe("deepseek-v4-pro")
+  })
+
+  test("strips prompt_cache_key for azure-entra providers too", async () => {
+    const fetchMock = mock(
+      (_url: string | URL | Request, _init?: RequestInit) =>
+        Promise.resolve(Response.json({ ok: true })),
+    )
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    await forwardProviderChatCompletions(
+      createAzureConfig({
+        authType: "azure-entra",
+        name: "foundry",
+        baseUrl: "https://example.openai.azure.com/openai",
+      }),
+      {
+        model: "gpt-4.1",
+        messages: [{ role: "user", content: "hello" }],
+        prompt_cache_key: "session-1",
+      },
+      new Headers(),
+    )
+
+    const body = parseJsonBody(fetchMock.mock.calls[0]?.[1]?.body) as Record<
+      string,
+      unknown
+    >
+    expect(body).not.toHaveProperty("prompt_cache_key")
+  })
+
+  test("keeps prompt_cache_key for non-Azure providers", async () => {
+    const fetchMock = mock(
+      (_url: string | URL | Request, _init?: RequestInit) =>
+        Promise.resolve(Response.json({ ok: true })),
+    )
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+
+    await forwardProviderChatCompletions(
+      createAzureConfig({
+        name: "opencode-go",
+        baseUrl: "https://opencode.ai/zen/go",
+      }),
+      {
+        model: "qwen3-coder",
+        messages: [{ role: "user", content: "hello" }],
+        prompt_cache_key: "session-1",
+      },
+      new Headers(),
+    )
+
+    const body = parseJsonBody(fetchMock.mock.calls[0]?.[1]?.body) as Record<
+      string,
+      unknown
+    >
+    expect(body.prompt_cache_key).toBe("session-1")
+  })
+})

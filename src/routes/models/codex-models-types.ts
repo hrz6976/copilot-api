@@ -1,5 +1,6 @@
 export interface CodexModelsResponse {
   models: Array<CodexModel>
+  [key: string]: unknown
 }
 
 export interface CodexModel {
@@ -20,9 +21,11 @@ export interface CodexModel {
   auto_review_model_override: string | null
   context_window: number
   max_context_window: number
+  max_output_tokens?: number
+  effective_context_window_percent?: number
   auto_compact_token_limit: number | null
   comp_hash: string | null
-  reasoning_summary_format: CodexReasoningSummaryFormat
+  reasoning_summary_format?: CodexReasoningSummaryFormat
   default_reasoning_summary: CodexReasoningSummary
   display_name: string
   description: string
@@ -44,14 +47,15 @@ export interface CodexModel {
   additional_speed_tiers: Array<string>
   supports_reasoning_summary_parameter: boolean
   supports_reasoning_summaries: boolean
-  base_instructions: string
+  base_instructions?: string
+  [key: string]: unknown
 }
 
-export type CodexVerbosity = "low" | "medium"
+export type CodexVerbosity = "low" | "medium" | "high"
 
 export type CodexApplyPatchToolType = "freeform"
 
-export type CodexWebSearchToolType = "text_and_image"
+export type CodexWebSearchToolType = "text_and_image" | "text"
 
 export type CodexInputModality = "text" | "image"
 
@@ -66,9 +70,11 @@ export type CodexMultiAgentVersion = "v1" | "v2"
 
 export type CodexReasoningSummaryFormat = "experimental"
 
-export type CodexReasoningSummary = "none"
+export type CodexReasoningSummary = "auto" | "none"
 
 export type CodexReasoningEffort =
+  | "none"
+  | "minimal"
   | "low"
   | "medium"
   | "high"
@@ -81,7 +87,7 @@ export interface CodexReasoningLevel {
   description: string
 }
 
-export type CodexShellType = "shell_command"
+export type CodexShellType = "shell_command" | "unified_exec"
 
 export type CodexModelVisibility = "list" | "hide"
 
@@ -102,6 +108,7 @@ export type CodexModelPlan =
   | "education"
   | "enterprise"
   | "enterprise_cbp_automation"
+  | "enterprise_cbp_trial"
   | "enterprise_cbp_usage_based"
   | "finserv"
   | "free"
@@ -114,6 +121,7 @@ export type CodexModelPlan =
   | "prolite"
   | "quorum"
   | "sci"
+  | "self_serve_business_prolite"
   | "self_serve_business_usage_based"
   | "team"
 
@@ -135,4 +143,18 @@ export interface CodexInstructionsVariables {
   personality_default?: string
   personality_friendly?: string
   personality_pragmatic?: string
+}
+
+export interface SyntheticCodexModelCandidate {
+  slug: string
+  catalogSlug?: string
+  catalogMatchRequired?: boolean
+  providerName?: string
+  displayName: string
+  description: string
+  contextWindow: number
+  maxOutputTokens: number
+  inputModalities: Array<CodexInputModality>
+  reasoningEfforts: Array<CodexReasoningEffort>
+  defaultReasoningEffort: CodexReasoningEffort
 }

@@ -23,6 +23,7 @@ import ModelMappingsPage from './ModelMappingsPage'
 import type {
   DesktopAuthMode,
   ServerAuthInfo,
+  ServerStatus,
   TokenUsageDailySummary,
   TokenUsageEventRecord,
   TokenUsageEventsPage,
@@ -35,6 +36,7 @@ import type {
 interface DashboardPageProps {
   authMode: DesktopAuthMode
   defaultPort: number
+  initialServerStatus?: ServerStatus
   onChangeAuth: () => void
 }
 
@@ -67,6 +69,7 @@ const numberFormatter = new Intl.NumberFormat()
 const TOKEN_USAGE_EVENTS_PAGE_SIZE = 10
 const ALL_METRICS_VALUE = '__all__'
 const ALL_MODELS_VALUE = '__all__'
+const MAX_LIFETIME_TREND_POINTS = 180
 const EMPTY_TOKEN_USAGE_TOTALS: TokenUsageTotals = {
   cache_creation_input_tokens: 0,
   cache_read_input_tokens: 0,
@@ -251,13 +254,20 @@ function formatCellText(value: string | null | undefined): string {
 export default function DashboardPage({
   authMode,
   defaultPort,
+  initialServerStatus,
   onChangeAuth,
 }: DashboardPageProps) {
   const { t } = useLanguage()
-  const [started, setStarted] = useState(false)
-  const [port, setPort] = useState<string>(String(defaultPort))
+  const [started, setStarted] = useState(initialServerStatus?.running ?? false)
+  const [port, setPort] = useState<string>(
+    String(initialServerStatus?.port ?? defaultPort),
+  )
   const [starting, setStarting] = useState(false)
-  const [startError, setStartError] = useState('')
+  const [startError, setStartError] = useState(
+    initialServerStatus && !initialServerStatus.running ?
+      (initialServerStatus.error ?? t('dashboard.serverUnexpectedStop'))
+    : '',
+  )
   const [stopping, setStopping] = useState(false)
   const [restarting, setRestarting] = useState(false)
 
@@ -270,7 +280,7 @@ export default function DashboardPage({
     useState<TokenUsageEventsPage | null>(null)
   const [tokenUsageEventsPage, setTokenUsageEventsPage] = useState(1)
   const [tokenUsagePeriod, setTokenUsagePeriod] =
-    useState<TokenUsagePeriod>('day')
+    useState<TokenUsagePeriod>('today')
   const [models, setModels] = useState<Model[]>([])
   const [serverAuthInfo, setServerAuthInfo] = useState<ServerAuthInfo>({
     enabled: false,
@@ -1181,9 +1191,12 @@ function TokenUsagePanel({
   const [trendModel, setTrendModel] = useState(ALL_MODELS_VALUE)
   const totals = tokenUsage?.totals ?? EMPTY_TOKEN_USAGE_TOTALS
   const periods: Array<{ key: TokenUsagePeriod; label: string }> = [
-    { key: 'day', label: t('dashboard.tokenUsagePeriodDay') },
-    { key: 'week', label: t('dashboard.tokenUsagePeriodWeek') },
-    { key: 'month', label: t('dashboard.tokenUsagePeriodMonth') },
+    { key: 'today', label: t('dashboard.tokenUsagePeriodToday') },
+    { key: 'this_week', label: t('dashboard.tokenUsagePeriodThisWeek') },
+    { key: 'last_7_days', label: t('dashboard.tokenUsagePeriodLast7Days') },
+    { key: 'this_month', label: t('dashboard.tokenUsagePeriodThisMonth') },
+    { key: 'last_30_days', label: t('dashboard.tokenUsagePeriodLast30Days') },
+    { key: 'lifetime', label: t('dashboard.tokenUsagePeriodLifetime') },
   ]
   const trendModels = dailyUsage?.byModel ?? tokenUsage?.byModel ?? []
   const selectedTrendModel =
@@ -1200,21 +1213,19 @@ function TokenUsagePanel({
           {t('dashboard.tokenUsage')}
         </h3>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="grid grid-cols-3 rounded-lg border border-line bg-sunken p-0.5">
+          <select
+            value={period}
+            onChange={(event) =>
+              onPeriodChange(event.target.value as TokenUsagePeriod)
+            }
+            className="h-7 rounded-md border border-line bg-surface px-2 text-[13px] text-ink-soft focus:outline-none focus:ring-2 focus:ring-accent/30"
+          >
             {periods.map((item) => (
-              <button
-                key={item.key}
-                onClick={() => onPeriodChange(item.key)}
-                className={`px-2.5 py-1 text-[13px] rounded-md transition-colors ${
-                  period === item.key ?
-                    'bg-surface text-ink shadow-sm font-semibold'
-                  : 'text-ink-soft hover:text-ink'
-                }`}
-              >
+              <option key={item.key} value={item.key}>
                 {item.label}
-              </button>
+              </option>
             ))}
-          </div>
+          </select>
         </div>
       </div>
 
@@ -1262,12 +1273,13 @@ function TokenUsagePanel({
         />
       </div>
 
-      {period !== 'day' && (
+      {period !== 'today' && (
         <TokenUsageTrendChart
           dailyUsage={dailyUsage}
           loading={loading}
           models={trendModels}
           onModelChange={setTrendModel}
+          period={period}
           selectedModel={selectedTrendModel}
           t={t}
         />
@@ -1467,6 +1479,44 @@ function getTrendTotals(
   )
 }
 
+function sampleTrendDays(
+  days: TokenUsageDailySummary['days'],
+  selectedModel: string,
+  period: TokenUsagePeriod,
+): TokenUsageDailySummary['days'] {
+  if (period !== 'lifetime' || days.length <= MAX_LIFETIME_TREND_POINTS) {
+    return days
+  }
+
+  const usageIndexes = days.reduce<Array<number>>((indexes, day, index) => {
+    if (getTrendTotals(day, selectedModel).request_count > 0) {
+      indexes.push(index)
+    }
+    return indexes
+  }, [])
+  if (usageIndexes.length >= MAX_LIFETIME_TREND_POINTS) {
+    const step = (usageIndexes.length - 1) / (MAX_LIFETIME_TREND_POINTS - 1)
+    return Array.from(
+      { length: MAX_LIFETIME_TREND_POINTS },
+      (_, index) => days[usageIndexes[Math.round(index * step)]],
+    )
+  }
+
+  const indexes = new Set(usageIndexes)
+  const sampleCount = Math.max(
+    1,
+    MAX_LIFETIME_TREND_POINTS - usageIndexes.length,
+  )
+  const step = (days.length - 1) / (sampleCount - 1 || 1)
+  for (let index = 0; index < sampleCount; index += 1) {
+    indexes.add(Math.round(index * step))
+  }
+  return [...indexes]
+    .sort((left, right) => left - right)
+    .slice(0, MAX_LIFETIME_TREND_POINTS)
+    .map((index) => days[index])
+}
+
 function formatChartDate(value: string): string {
   const [, month, day] = value.split('-')
   return month && day ? `${month}/${day}` : value
@@ -1477,6 +1527,7 @@ function TokenUsageTrendChart({
   loading,
   models,
   onModelChange,
+  period,
   selectedModel,
   t,
 }: {
@@ -1484,6 +1535,7 @@ function TokenUsageTrendChart({
   loading: boolean
   models: TokenUsageModelSummary[]
   onModelChange: (model: string) => void
+  period: TokenUsagePeriod
   selectedModel: string
   t: TranslateFn
 }) {
@@ -1525,7 +1577,7 @@ function TokenUsageTrendChart({
     selectedMetric === ALL_METRICS_VALUE ? metrics : (
       metrics.filter((metric) => metric.key === selectedMetric)
     )
-  const days = dailyUsage?.days ?? []
+  const days = sampleTrendDays(dailyUsage?.days ?? [], selectedModel, period)
   const hasUsage = days.some(
     (day) => getTrendTotals(day, selectedModel).request_count > 0,
   )

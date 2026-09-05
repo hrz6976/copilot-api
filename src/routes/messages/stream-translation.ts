@@ -2,14 +2,13 @@ import {
   type ChatCompletionChunk,
   type Choice,
   type Delta,
-} from "~/services/copilot/create-chat-completions"
+} from "~/lib/types/chat-completions"
 
 import {
   type AnthropicMessageDeltaEvent,
   type AnthropicStreamEventData,
   type AnthropicStreamState,
-} from "./anthropic-types"
-import { THINKING_TEXT } from "./non-stream-translation"
+} from "~/lib/types/anthropic"
 import { mapOpenAIStopReasonToAnthropic } from "./utils"
 
 function isToolBlockOpen(state: AnthropicStreamState): boolean {
@@ -69,21 +68,6 @@ export function flushPendingAnthropicStreamEvents(
   }
 
   completePendingMessage(state, events)
-  if (state.messageStartSent && !state.messageStopSent) {
-    events.push(
-      {
-        type: "message_delta",
-        delta: {
-          stop_reason: "end_turn",
-          stop_sequence: null,
-        },
-      },
-      {
-        type: "message_stop",
-      },
-    )
-    state.messageStopSent = true
-  }
   return events
 }
 
@@ -104,7 +88,7 @@ function completePendingMessage(
     type: "message_stop",
   })
   state.pendingMessageDelta = undefined
-  state.messageStopSent = true
+  state.messageCompleted = true
 }
 
 function handleFinish(
@@ -398,7 +382,6 @@ function handleMessageStart(
       },
     })
     state.messageStartSent = true
-    state.messageStopSent = false
   }
 }
 
@@ -422,7 +405,7 @@ function handleReasoningOpaque(
         index: state.contentBlockIndex,
         delta: {
           type: "thinking_delta",
-          thinking: THINKING_TEXT, // Compatible with opencode, it will filter out blocks where the thinking text is empty, so we add a default thinking text here
+          thinking: "",
         },
       },
       {
@@ -447,7 +430,8 @@ function handleThinkingText(
   state: AnthropicStreamState,
   events: Array<AnthropicStreamEventData>,
 ) {
-  const reasoningText = delta.reasoning_text ?? delta.reasoning_content
+  const reasoningText =
+    delta.reasoning_text ?? delta.reasoning_content ?? delta.reasoning
   if (reasoningText && reasoningText.length > 0) {
     // compatible with copilot API returning content->reasoning_text->reasoning_opaque in different deltas
     // this is an extremely abnormal situation, probably a server-side bug
@@ -456,6 +440,7 @@ function handleThinkingText(
       delta.content = reasoningText
       delta.reasoning_text = undefined
       delta.reasoning_content = undefined
+      delta.reasoning = undefined
       return
     }
 
@@ -511,7 +496,8 @@ export function translateErrorToAnthropicErrorEvent(): AnthropicStreamEventData 
     type: "error",
     error: {
       type: "api_error",
-      message: "An unexpected error occurred during streaming.",
+      message:
+        "An unexpected error occurred during streaming, retry your request.",
     },
   }
 }

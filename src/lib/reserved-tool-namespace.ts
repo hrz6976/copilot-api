@@ -1,4 +1,4 @@
-import type { ResponsesPayload } from "~/services/copilot/create-responses"
+import type { ResponsesPayload } from "~/lib/types/responses"
 
 const COLLABORATION_NAMESPACE = "collaboration"
 const COLLABORATION_NAMESPACE_ALIAS = "codex_collaboration"

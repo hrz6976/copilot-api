@@ -1,4 +1,4 @@
-import type { Model, ModelsResponse } from "~/services/copilot/get-models"
+import type { Model, ModelsResponse } from "~/lib/types/models"
 
 type CloudGptModelKind = "chat" | "embeddings" | "image" | "video"
 type CloudGptInputModality = "image" | "pdf" | "text" | "video"

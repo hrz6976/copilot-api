@@ -8,6 +8,7 @@ import {
   isSupportedProviderType,
   normalizeProviderBaseUrl,
   setProviderConfig,
+  setConfiguredApiKeys,
   SUPPORTED_PROVIDER_TYPES,
   type ProviderAuthType,
   type ProviderConfig,
@@ -22,11 +23,13 @@ import {
 } from "./lib/llmapi-token"
 import { loginCodex } from "./lib/oauth/codex"
 import { PATHS, ensurePaths } from "./lib/paths"
+import { getConfiguredApiKeys } from "./lib/request-auth"
 import {
   QUICK_PROVIDER_CONFIGS,
   type QuickProviderConfig,
   type QuickProviderName,
 } from "./lib/quick-providers"
+import { prompt } from "./lib/interactive-prompt"
 import { state } from "./lib/state"
 import { persistCodexCredentials, setupGitHubToken } from "./lib/token"
 
@@ -40,7 +43,7 @@ const authArgs = {
   provider: {
     type: "string",
     description:
-      "Provider to log in with or configure (copilot, codex, opencode-go, deepseek, dashscope, cloudgpt, llmapi, openrouter, custom)",
+      "Provider to log in with or configure (copilot, codex, opencode-go, kimi, deepseek, dashscope, cloudgpt, llmapi, openrouter, custom)",
   },
   verbose: {
     alias: "v",
@@ -79,6 +82,7 @@ const BUILTIN_PROVIDER_LABELS: Record<BuiltinProviderName, string> = {
 const AUTH_PROVIDER_LABELS: Record<AuthProviderName, string> = {
   ...BUILTIN_PROVIDER_LABELS,
   "opencode-go": "OpenCode Go",
+  kimi: "Kimi",
   deepseek: "DeepSeek",
   dashscope: "DashScope",
   cloudgpt: "CloudGPT",
@@ -130,7 +134,7 @@ async function resolveProviderSelection(
     return availableProviders[0]
   }
 
-  const provider = await consola.prompt("Select a provider to log in with", {
+  const provider = await prompt("Select a provider to log in with", {
     type: "select",
     options: availableProviders.map((providerName) => ({
       label: `${AUTH_PROVIDER_LABELS[providerName]} (${providerName})`,
@@ -167,7 +171,7 @@ async function promptRequiredText(
   message: string,
   fieldName: string,
 ): Promise<string> {
-  const value = await consola.prompt(message, { type: "text" })
+  const value = await prompt(message, { type: "text" })
   const normalizedValue = typeof value === "string" ? value.trim() : ""
   if (!normalizedValue) {
     throw new Error(`${fieldName} must be a non-empty string`)
@@ -185,7 +189,7 @@ function canUseMaskedPrompt(): boolean {
 
 async function promptMaskedText(message: string): Promise<string> {
   if (!canUseMaskedPrompt()) {
-    const value = await consola.prompt(message, { type: "text" })
+    const value = await prompt(message, { type: "text" })
     return typeof value === "string" ? value : ""
   }
 
@@ -273,7 +277,7 @@ async function promptCustomProviderName(): Promise<string> {
 }
 
 async function promptCustomProviderType(): Promise<ProviderType> {
-  const providerType = await consola.prompt("Select provider type", {
+  const providerType = await prompt("Select provider type", {
     type: "select",
     options: SUPPORTED_PROVIDER_TYPES.map((type) => ({
       label: type,
@@ -294,7 +298,7 @@ async function promptCustomProviderType(): Promise<ProviderType> {
 async function promptQuickProviderType(
   defaultType: ProviderType,
 ): Promise<ProviderType> {
-  const providerType = await consola.prompt(
+  const providerType = await prompt(
     `Select provider type (default: ${defaultType})`,
     {
       type: "select",
@@ -335,7 +339,7 @@ async function promptCustomProviderAuthType(
   providerType: ProviderType,
 ): Promise<ProviderAuthType | undefined> {
   const defaultAuthType = getDefaultProviderAuthType(providerType)
-  const authType = await consola.prompt("Select provider auth type", {
+  const authType = await prompt("Select provider auth type", {
     type: "select",
     options: [
       {
@@ -363,7 +367,7 @@ async function promptCustomProviderAuthType(
 async function promptQuickProviderBaseUrl(
   defaultBaseUrl: string,
 ): Promise<string> {
-  const value = await consola.prompt(
+  const value = await prompt(
     `Enter provider baseUrl (default: ${defaultBaseUrl})`,
     {
       type: "text",
@@ -521,9 +525,7 @@ async function loginWithCodex(): Promise<void> {
       }
     },
     onPrompt(message) {
-      return consola.prompt(message, {
-        type: "text",
-      })
+      return prompt(message, { type: "text" }).then((value) => value ?? "")
     },
     onProgress(message) {
       consola.debug(message)
@@ -605,6 +607,118 @@ async function runStandaloneAuthLogin(options: RunAuthOptions): Promise<void> {
   }
 }
 
+const authKeysArgs = {
+  add: {
+    alias: "a",
+    type: "string",
+    description: "Add an API key for gateway authentication",
+  },
+  remove: {
+    alias: "r",
+    type: "string",
+    description: "Remove an API key",
+  },
+  list: {
+    alias: "l",
+    type: "boolean",
+    default: false,
+    description: "List configured API keys",
+  },
+  clear: {
+    type: "boolean",
+    default: false,
+    description: "Remove all configured API keys",
+  },
+} as const
+
+interface RunAuthKeysOptions {
+  add?: string
+  remove?: string
+  list?: boolean
+  clear?: boolean
+}
+
+function normalizeAuthKeyValue(value: string): string {
+  const normalizedKey = value.trim()
+  if (!normalizedKey) {
+    throw new Error("API key must be a non-empty string")
+  }
+  return normalizedKey
+}
+
+export async function runAuthKeys(options: RunAuthKeysOptions): Promise<void> {
+  const tlsModule = await import("./lib/tls")
+  tlsModule.enableSystemCACompat()
+
+  await ensurePaths()
+
+  const operations = [
+    ...(options.add !== undefined ? ["add"] : []),
+    ...(options.remove !== undefined ? ["remove"] : []),
+    ...(options.list ? ["list"] : []),
+    ...(options.clear ? ["clear"] : []),
+  ]
+  if (operations.length > 1) {
+    throw new Error(
+      "Use only one of --add, --remove, --list, or --clear per invocation",
+    )
+  }
+
+  const operation = operations[0] ?? "list"
+
+  if (operation === "add") {
+    const apiKey = normalizeAuthKeyValue(options.add ?? "")
+    const currentKeys = getConfiguredApiKeys()
+    if (currentKeys.includes(apiKey)) {
+      consola.info(
+        `API key already configured. ${currentKeys.length} API key(s) configured.`,
+      )
+      return
+    }
+    const storedKeys = setConfiguredApiKeys([...currentKeys, apiKey])
+    consola.success(
+      `API key added to ${PATHS.CONFIG_PATH}. ${storedKeys.length} API key(s) configured.`,
+    )
+    return
+  }
+
+  if (operation === "remove") {
+    const apiKey = normalizeAuthKeyValue(options.remove ?? "")
+    const currentKeys = getConfiguredApiKeys()
+    if (!currentKeys.includes(apiKey)) {
+      consola.info(
+        `API key not found. ${currentKeys.length} API key(s) configured.`,
+      )
+      return
+    }
+    const storedKeys = setConfiguredApiKeys(
+      currentKeys.filter((key) => key !== apiKey),
+    )
+    consola.success(
+      `API key removed from ${PATHS.CONFIG_PATH}. ${storedKeys.length} API key(s) configured.`,
+    )
+    return
+  }
+
+  if (operation === "clear") {
+    setConfiguredApiKeys([])
+    consola.success(`Removed all API keys from ${PATHS.CONFIG_PATH}.`)
+    return
+  }
+
+  const currentKeys = getConfiguredApiKeys()
+  if (currentKeys.length === 0) {
+    consola.info(
+      "No API keys configured. Run `npx copilot-api auth keys --add <key>` to add one.",
+    )
+    return
+  }
+  consola.info("Configured API keys:")
+  for (const key of currentKeys) {
+    consola.info(`- ${key}`)
+  }
+}
+
 const authLogin = defineCommand({
   meta: {
     name: "login",
@@ -621,6 +735,22 @@ const authLogin = defineCommand({
   },
 })
 
+const authKeys = defineCommand({
+  meta: {
+    name: "keys",
+    description: "Manage gateway API keys (auth.apiKeys) in the config",
+  },
+  args: authKeysArgs,
+  run({ args }) {
+    return runAuthKeys({
+      add: args.add,
+      remove: args.remove,
+      list: args.list,
+      clear: args.clear,
+    })
+  },
+})
+
 export const auth = defineCommand({
   meta: {
     name: "auth",
@@ -629,6 +759,7 @@ export const auth = defineCommand({
   args: authArgs,
   subCommands: {
     login: authLogin,
+    keys: authKeys,
   },
   run({ args }) {
     if ((args._[0] ?? "").trim()) {

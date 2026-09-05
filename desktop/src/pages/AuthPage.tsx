@@ -35,6 +35,7 @@ const PROVIDER_AUTH_TYPES: ProviderAuthTypeInput[] = [
 ]
 const PROVIDER_COLORS: Record<QuickProviderName, string> = {
   'opencode-go': 'bg-sky-500',
+  kimi: 'bg-cyan-500',
   deepseek: 'bg-emerald-500',
   dashscope: 'bg-orange-500',
   cloudgpt: 'bg-blue-500',
@@ -53,6 +54,11 @@ const QUICK_PROVIDER_DEFAULTS: Record<
   'opencode-go': {
     baseUrl: 'https://opencode.ai/zen/go',
     editableType: false,
+    type: 'openai-compatible',
+  },
+  kimi: {
+    baseUrl: 'https://api.kimi.com/coding',
+    editableType: true,
     type: 'openai-compatible',
   },
   deepseek: {
@@ -237,6 +243,8 @@ export default function AuthPage({ onBack, onSuccess }: AuthPageProps) {
     switch (provider) {
       case 'opencode-go':
         return t('auth.providerOpencodeGo')
+      case 'kimi':
+        return t('auth.providerKimi')
       case 'deepseek':
         return t('auth.providerDeepseek')
       case 'dashscope':
@@ -342,6 +350,7 @@ export default function AuthPage({ onBack, onSuccess }: AuthPageProps) {
                 {(
                   [
                     'opencode-go',
+                    'kimi',
                     'deepseek',
                     'dashscope',
                     'cloudgpt',

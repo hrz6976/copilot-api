@@ -4,7 +4,7 @@ import type {
   ResponseErrorEvent,
   ResponseFailedEvent,
   ResponsesResult,
-} from "~/services/copilot/create-responses"
+} from "~/lib/types/responses"
 
 /**
  * Shared error passthrough for the Responses (SSE) streaming paths.

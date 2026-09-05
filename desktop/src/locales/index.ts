@@ -18,6 +18,7 @@ export interface Locale {
     providerDashscope: string
     providerDeepseek: string
     providerInvalid: string
+    providerKimi: string
     providerName: string
     providerOpencodeGo: string
     providerOpenrouter: string
@@ -75,9 +76,12 @@ export interface Locale {
     tokenUsageModelBreakdown: string
     tokenUsageOutput: string
     tokenUsagePage: string
-    tokenUsagePeriodDay: string
-    tokenUsagePeriodMonth: string
-    tokenUsagePeriodWeek: string
+    tokenUsagePeriodToday: string
+    tokenUsagePeriodThisWeek: string
+    tokenUsagePeriodLast7Days: string
+    tokenUsagePeriodThisMonth: string
+    tokenUsagePeriodLast30Days: string
+    tokenUsagePeriodLifetime: string
     tokenUsageProvider: string
     tokenUsageRequests: string
     tokenUsageSession: string
@@ -145,8 +149,17 @@ export interface Locale {
     sectionGeneral: string
     launchAtLogin: string
     launchAtLoginDesc: string
+    autoStartServer: string
+    autoStartServerDesc: string
     minimizeToTray: string
     minimizeToTrayDesc: string
+    sectionSecurity: string
+    serverKeysNote: string
+    apiKeysLabel: string
+    apiKeysDesc: string
+    adminKeyLabel: string
+    adminKeyPlaceholder: string
+    adminKeyDesc: string
     sectionNetwork: string
     proxySystemNote: string
     proxyMode: string

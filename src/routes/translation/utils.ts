@@ -1,7 +1,4 @@
-import type {
-  ContentPart,
-  Message,
-} from "~/services/copilot/create-chat-completions"
+import type { ContentPart, Message } from "~/lib/types/chat-completions"
 
 export type OpenAIFinishReason =
   | "stop"
