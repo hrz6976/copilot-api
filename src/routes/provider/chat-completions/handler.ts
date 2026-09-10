@@ -19,6 +19,7 @@ import {
 import { HTTPError, getStreamErrorMessage } from "~/lib/error"
 import { createHandlerLogger, debugJson } from "~/lib/logger"
 import { resolveProviderConfig } from "~/lib/provider-resolver"
+import { writeSSEIfConnected } from "~/lib/sse"
 import {
   createProviderTokenUsageRecorder,
   normalizeOpenAIUsage,
@@ -170,6 +171,7 @@ const handleOpenAICompatibleProviderChatCompletions = async (
     providerConfig,
     payload,
     c.req.raw.headers,
+    { clientSignal: c.req.raw.signal },
   )
 
   if (!upstreamResponse.ok) {
@@ -584,7 +586,7 @@ const streamProviderChatCompletions = (
           }
         }
 
-        await stream.writeSSE({
+        await writeSSEIfConnected(stream, {
           event: chunk.event,
           data: chunk.data ?? "",
         })

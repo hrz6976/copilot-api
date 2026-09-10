@@ -21,6 +21,7 @@ import {
   restoreReservedToolNamespaces,
 } from "~/lib/reserved-tool-namespace"
 import { requestContext } from "~/lib/request-context"
+import { writeSSEIfConnected } from "~/lib/sse"
 import {
   createProviderTokenUsageRecorder,
   normalizeResponsesUsage,
@@ -170,7 +171,7 @@ export async function handleProviderResponsesForProvider(
       payload,
       c.req.raw.headers,
       providerConfig.baseUrl,
-      { signal: c.req.raw.signal },
+      { clientSignal: c.req.raw.signal },
     )
     const recordUsage = createProviderResponsesUsageRecorder(
       payload,
@@ -196,7 +197,7 @@ export async function handleProviderResponsesForProvider(
     providerConfig,
     upstreamPayload,
     c.req.raw.headers,
-    { signal: c.req.raw.signal },
+    { clientSignal: c.req.raw.signal },
   )
 
   if (!upstreamResponse.ok) {
@@ -214,16 +215,12 @@ export async function handleProviderResponsesForProvider(
   )
 
   if (payload.stream) {
-    return streamProviderResponses(
-      c,
-      getResponsesEvents(upstreamResponse, c.req.raw.signal),
-      {
-        normalizeCodex: false,
-        provider,
-        recordUsage,
-        restoreReservedNamespaces: aliasReservedNamespaces,
-      },
-    )
+    return streamProviderResponses(c, getResponsesEvents(upstreamResponse), {
+      normalizeCodex: false,
+      provider,
+      recordUsage,
+      restoreReservedNamespaces: aliasReservedNamespaces,
+    })
   }
 
   const responseBody = (await upstreamResponse
@@ -402,7 +399,7 @@ const streamProviderResponses = async (
         }
       }
 
-      await stream.writeSSE({
+      await writeSSEIfConnected(stream, {
         data: responseChunk.data ?? "",
         event: responseChunk.event,
       })
@@ -469,10 +466,5 @@ const getResponsesStreamEventUsage = (
   return null
 }
 
-const getResponsesEvents = (
-  response: Response,
-  signal?: AbortSignal,
-): ResponsesStream =>
-  createResponsesSafeStream(createResponsesHttpEventStream(response, signal), {
-    signal,
-  })
+const getResponsesEvents = (response: Response): ResponsesStream =>
+  createResponsesSafeStream(createResponsesHttpEventStream(response))

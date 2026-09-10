@@ -9,6 +9,7 @@ import { createHandlerLogger, debugJson } from "~/lib/logger"
 import { findEndpointModel } from "~/lib/models"
 import { applyGptModelTokenLimitParam } from "~/lib/provider-payload"
 import { resolveConfiguredProviderModelAlias } from "~/lib/provider-resolver"
+import { writeSSEIfConnected } from "~/lib/sse"
 import {
   createCopilotTokenUsageRecorder,
   normalizeOpenAIUsage,
@@ -78,6 +79,7 @@ export async function handleCompletion(c: Context) {
   })
 
   const response = await createChatCompletions(payload, {
+    clientSignal: c.req.raw.signal,
     requestId,
     sessionId,
   })
@@ -109,16 +111,16 @@ export async function handleCompletion(c: Context) {
             ),
           }
         }
-        await stream.writeSSE(chunk as SSEMessage)
+        await writeSSEIfConnected(stream, chunk as SSEMessage)
       }
     } catch (error) {
       const message = getStreamErrorMessage(error)
       logger.error("Chat completions stream failed:", message)
-      await stream.writeSSE({
+      await writeSSEIfConnected(stream, {
         event: "error",
         data: JSON.stringify({ error: { message, type: "api_error" } }),
       })
-      await stream.writeSSE({ data: "[DONE]" })
+      await writeSSEIfConnected(stream, { data: "[DONE]" })
     } finally {
       recordUsage(usage)
     }

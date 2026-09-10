@@ -22,18 +22,11 @@ export interface AuthStatus extends AuthResult {
 }
 
 export type ProviderType =
-  | 'anthropic'
-  | 'openai-compatible'
-  | 'openai-responses'
+  'anthropic' | 'openai-compatible' | 'openai-responses'
 export type ProviderAuthType = 'authorization' | 'x-api-key'
 export type ProviderAuthTypeInput = ProviderAuthType | '__default__'
 export type QuickProviderName =
-  | 'opencode-go'
-  | 'kimi'
-  | 'deepseek'
-  | 'dashscope'
-  | 'cloudgpt'
-  | 'openrouter'
+  'opencode-go' | 'kimi' | 'deepseek' | 'dashscope' | 'cloudgpt' | 'openrouter'
 
 export type ProviderAuthInput =
   | {
@@ -54,6 +47,7 @@ export type ProviderAuthInput =
 export interface ServerStatus {
   running: boolean
   port?: number
+  host?: string
   error?: string
 }
 
@@ -194,6 +188,7 @@ export interface DesktopSettings {
   apiHome: string
   oauthApp: 'default' | 'opencode'
   enterpriseUrl: string
+  host: string
   lastPort: number
   launchAtLogin: boolean
   autoStartServer: boolean
@@ -220,6 +215,7 @@ declare global {
       startServer: (
         port: number,
         authMode?: DesktopAuthMode,
+        host?: string,
       ) => Promise<ServerStatus>
       stopServer: () => Promise<void>
       getServerStatus: () => Promise<ServerStatus>

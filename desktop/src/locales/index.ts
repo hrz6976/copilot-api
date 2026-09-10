@@ -141,6 +141,7 @@ export interface Locale {
     startFailed: string
     startTimeout: string
     processExit: string
+    invalidHost: string
   }
   settings: {
     title: string
@@ -161,6 +162,9 @@ export interface Locale {
     adminKeyPlaceholder: string
     adminKeyDesc: string
     sectionNetwork: string
+    host: string
+    hostDesc: string
+    hostInvalid: string
     proxySystemNote: string
     proxyMode: string
     proxyModeSystem: string

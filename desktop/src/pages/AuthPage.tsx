@@ -267,7 +267,8 @@ export default function AuthPage({ onBack, onSuccess }: AuthPageProps) {
   const canEditProviderType =
     providerChoice === 'custom' || selectedQuickProvider?.editableType
   const requiresProviderApiKey =
-    providerChoice === 'custom' || selectedQuickProvider?.requiresApiKey !== false
+    providerChoice === 'custom'
+    || selectedQuickProvider?.requiresApiKey !== false
 
   return (
     <div className="flex flex-col h-screen bg-canvas">
@@ -549,7 +550,8 @@ export default function AuthPage({ onBack, onSuccess }: AuthPageProps) {
                   </label>
                 : <p className="rounded-lg border border-line-soft bg-sunken px-3 py-2 text-[12px] text-ink-faint">
                     {t('auth.providerAzureCliAuth')}
-                  </p>}
+                  </p>
+                }
 
                 {isCustomProvider && (
                   <label className="flex flex-col gap-1.5">

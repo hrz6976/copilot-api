@@ -4,15 +4,17 @@ import {
   type RequestInit as UndiciRequestInit,
 } from "undici"
 
-import type { ResolvedProviderConfig } from "~/lib/config"
+import {
+  getUpstreamTransportConfig,
+  type ResolvedProviderConfig,
+} from "~/lib/config"
 import { requestContext } from "~/lib/request-context"
 import { createTimeoutDispatcher } from "~/lib/timeout-dispatcher"
 import type { AnthropicMessagesPayload } from "~/lib/types/anthropic"
 import type { ChatCompletionsPayload } from "~/lib/types/chat-completions"
 import type { ResponsesPayload } from "~/lib/types/responses"
 import { parseUserIdMetadata } from "~/lib/utils"
-import { getResponsesTransportConfig } from "~/lib/config"
-import { fetchResponsesWithLifecycle } from "~/services/responses-http"
+import { fetchUpstreamWithLifecycle } from "~/services/upstream-http"
 
 import { getLlmApiModel } from "~/services/llmapi/get-models"
 
@@ -212,6 +214,7 @@ export async function forwardProviderMessages(
   providerConfig: ResolvedProviderConfig,
   payload: AnthropicMessagesPayload,
   requestHeaders: Headers,
+  options: { clientSignal?: AbortSignal } = {},
 ): Promise<Response> {
   consola.log(`<-- model: ${payload.model}`)
   const headers = buildProviderUpstreamHeaders(
@@ -224,12 +227,18 @@ export async function forwardProviderMessages(
     headers,
     resolveOpencodeMessagesSession(payload),
   )
-  return await fetch(
+  const transportConfig = getUpstreamTransportConfig()
+  return await fetchUpstreamWithLifecycle(
     buildProviderUrl(providerConfig, "messages", payload.model),
     {
       method: "POST",
       headers,
       body: JSON.stringify(buildProviderPayload(providerConfig, payload)),
+    },
+    {
+      clientSignal: options.clientSignal,
+      headersTimeoutMs: transportConfig.headersTimeoutMs,
+      streamInactivityTimeoutMs: transportConfig.streamInactivityTimeoutMs,
     },
   )
 }
@@ -238,6 +247,7 @@ export async function forwardProviderChatCompletions(
   providerConfig: ResolvedProviderConfig,
   payload: ChatCompletionsPayload,
   requestHeaders: Headers,
+  options: { clientSignal?: AbortSignal } = {},
 ): Promise<Response> {
   consola.log(`<-- model: ${payload.model}`)
   const headers = buildProviderUpstreamHeaders(
@@ -250,12 +260,18 @@ export async function forwardProviderChatCompletions(
     headers,
     payload.prompt_cache_key?.trim() || undefined,
   )
-  return await fetch(
+  const transportConfig = getUpstreamTransportConfig()
+  return await fetchUpstreamWithLifecycle(
     buildProviderUrl(providerConfig, "chat/completions", payload.model),
     {
       method: "POST",
       headers,
       body: JSON.stringify(buildProviderPayload(providerConfig, payload)),
+    },
+    {
+      clientSignal: options.clientSignal,
+      headersTimeoutMs: transportConfig.headersTimeoutMs,
+      streamInactivityTimeoutMs: transportConfig.streamInactivityTimeoutMs,
     },
   )
 }
@@ -264,10 +280,10 @@ export async function forwardProviderResponses(
   providerConfig: ResolvedProviderConfig,
   payload: ResponsesPayload,
   requestHeaders: Headers,
-  options: { signal?: AbortSignal } = {},
+  options: { clientSignal?: AbortSignal } = {},
 ): Promise<Response> {
   consola.log(`<-- model: ${payload.model}`)
-  const transportConfig = getResponsesTransportConfig()
+  const transportConfig = getUpstreamTransportConfig()
   const headers = buildProviderUpstreamHeaders(
     providerConfig,
     requestHeaders,
@@ -278,7 +294,7 @@ export async function forwardProviderResponses(
     headers,
     payload.prompt_cache_key?.trim() || undefined,
   )
-  return await fetchResponsesWithLifecycle(
+  return await fetchUpstreamWithLifecycle(
     buildProviderUrl(providerConfig, "responses", payload.model),
     {
       method: "POST",
@@ -287,7 +303,7 @@ export async function forwardProviderResponses(
     },
     {
       headersTimeoutMs: transportConfig.headersTimeoutMs,
-      signal: options.signal,
+      clientSignal: options.clientSignal,
       streamInactivityTimeoutMs: transportConfig.streamInactivityTimeoutMs,
     },
   )
@@ -326,16 +342,23 @@ function resolveProviderRequestUrl(
 export async function forwardProviderAlphaSearch(
   providerConfig: ResolvedProviderConfig,
   request: Request,
+  options: { clientSignal?: AbortSignal } = {},
 ): Promise<Response> {
   const headers = buildProviderUpstreamHeaders(providerConfig, request.headers)
   const body = await request.arrayBuffer()
+  const transportConfig = getUpstreamTransportConfig()
 
-  return await fetch(
+  return await fetchUpstreamWithLifecycle(
     resolveProviderRequestUrl(providerConfig, request.url, "/v1/alpha/search"),
     {
       method: "POST",
       headers,
       body,
+    },
+    {
+      clientSignal: options.clientSignal,
+      headersTimeoutMs: transportConfig.headersTimeoutMs,
+      streamInactivityTimeoutMs: transportConfig.streamInactivityTimeoutMs,
     },
   )
 }

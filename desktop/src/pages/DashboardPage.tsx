@@ -14,6 +14,7 @@ import {
   shouldShowCopilotQuotaUsage,
   shouldShowCopilotUsageSummary,
 } from '../lib/copilot-usage-display'
+import { buildServerBaseUrl } from '../lib/server-url'
 import {
   formatTokenCost,
   formatTokenCosts,
@@ -36,6 +37,7 @@ import type {
 interface DashboardPageProps {
   authMode: DesktopAuthMode
   defaultPort: number
+  defaultHost: string
   initialServerStatus?: ServerStatus
   onChangeAuth: () => void
 }
@@ -254,6 +256,7 @@ function formatCellText(value: string | null | undefined): string {
 export default function DashboardPage({
   authMode,
   defaultPort,
+  defaultHost,
   initialServerStatus,
   onChangeAuth,
 }: DashboardPageProps) {
@@ -261,6 +264,9 @@ export default function DashboardPage({
   const [started, setStarted] = useState(initialServerStatus?.running ?? false)
   const [port, setPort] = useState<string>(
     String(initialServerStatus?.port ?? defaultPort),
+  )
+  const [host, setHost] = useState<string>(
+    initialServerStatus?.host ?? defaultHost,
   )
   const [starting, setStarting] = useState(false)
   const [startError, setStartError] = useState(
@@ -301,8 +307,9 @@ export default function DashboardPage({
   const tokenUsageEventsRequestId = useRef(0)
 
   const portNum = parseInt(port, 10)
-  const openaiUrl = `http://localhost:${portNum}/v1`
-  const anthropicUrl = `http://localhost:${portNum}`
+  const normalizedHost = host.trim()
+  const openaiUrl = `${buildServerBaseUrl(host, portNum)}/v1`
+  const anthropicUrl = buildServerBaseUrl(host, portNum)
 
   useEffect(() => {
     let active = true
@@ -311,7 +318,12 @@ export default function DashboardPage({
       .getServerStatus()
       .then((status) => {
         if (!active) return
-        if (status.port) setPort(String(status.port))
+        // Only a running server reports the host and port it actually bound,
+        // so an idle status must not overwrite the saved settings.
+        if (status.running) {
+          if (status.port) setPort(String(status.port))
+          if (status.host !== undefined) setHost(status.host)
+        }
         setStarted(status.running)
       })
       .catch(() => {})
@@ -393,7 +405,11 @@ export default function DashboardPage({
     setServerError('')
     setLogs([])
     try {
-      const status = await window.electronAPI.startServer(portNum, authMode)
+      const status = await window.electronAPI.startServer(
+        portNum,
+        authMode,
+        normalizedHost,
+      )
       if (status.running) {
         setStarted(true)
       } else {
@@ -445,9 +461,14 @@ export default function DashboardPage({
     setLogs([])
     try {
       await window.electronAPI.stopServer()
-      const status = await window.electronAPI.startServer(portNum, authMode)
+      const status = await window.electronAPI.startServer(
+        portNum,
+        authMode,
+        normalizedHost,
+      )
       if (status.running) {
         if (status.port) setPort(String(status.port))
+        if (status.host !== undefined) setHost(status.host)
         setStarted(true)
       } else {
         setStarted(false)
@@ -480,6 +501,17 @@ export default function DashboardPage({
 
   const handleChangeAuth = () => {
     onChangeAuth()
+  }
+
+  // The listening host is configured in the settings modal, so reload the
+  // saved value once the modal closes.
+  const handleSettingsClose = () => {
+    void window.electronAPI
+      .getSettings()
+      .then((saved) => {
+        if (saved.host !== undefined) setHost(saved.host)
+      })
+      .catch(() => {})
   }
 
   const fetchData = async () => {
@@ -712,6 +744,7 @@ export default function DashboardPage({
         onChangeAuth={handleChangeAuth}
         onRestart={handleRestart}
         onStop={handleStop}
+        onSettingsClose={handleSettingsClose}
         isRunning={started && !stopping}
         isRestarting={restarting}
       />
