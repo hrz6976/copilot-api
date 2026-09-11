@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@hrz6976/copilot-api"><img src="https://img.shields.io/npm/v/@hrz6976/copilot-api.svg" alt="npm version"></a>
-  <a href="https://github.com/hrz6976/copilot-api/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="https://github.com/hrz6976/copilot-api/blob/dev/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
   <a href="https://github.com/hrz6976/copilot-api/stargazers"><img src="https://img.shields.io/github/stars/hrz6976/copilot-api.svg" alt="GitHub stars"></a>
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/Bun-%3E%3D1.2.x-orange.svg" alt="Bun >= 1.2.x"></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/Node-%3E%3D22.13.0-green.svg" alt="Node >= 22.13.0"></a>
@@ -310,9 +310,7 @@ args = [
 
 Without this configuration, Codex cannot fetch `/v1/models` while not signed in to a GPT account, so custom models are unavailable in the model picker.
 
-When a Codex client (`User-Agent` starts with `codex`) requests the top-level `GET /v1/models`, the gateway merges native Codex models with models available through the Messages adapter. The latter advertise `use_responses_lite: true`, except DeepSeek models, which use `use_responses_lite: false` and `tool_mode: null`. For other models, `/v1/responses` uses **Responses → Messages** for Anthropic providers, while OpenAI-compatible providers and Chat-only Copilot models reuse the existing Messages route for **Responses → Messages → Chat Completions**, then translate streaming or JSON results back to Responses.
-
-> **Note:** DeepSeek models do not use Responses Lite (`use_responses_lite: false`, `tool_mode: null`), so the tool set they advertise to Codex differs from other models, which use `tool_mode: "code_mode_only"`. Switching between a DeepSeek model and a Responses Lite model mid-session is not compatible, because tool calls and conversation history produced under one tool set do not translate to the other. Start a new Codex session when switching between them.
+When a Codex client (`User-Agent` starts with `codex`) requests the top-level `GET /v1/models`, the gateway merges native Codex models with models available through the Messages adapter. The latter advertise `use_responses_lite: true` and `tool_mode: "code_mode_only"`. For these models, `/v1/responses` uses **Responses → Messages** for Anthropic providers, while OpenAI-compatible providers and Chat-only Copilot models reuse the existing Messages route for **Responses → Messages → Chat Completions**, then translate streaming or JSON results back to Responses.
 
 The merged catalog is what Codex shows in its model picker, including the models exposed by your configured providers:
 
@@ -431,30 +429,65 @@ npx @hrz6976/copilot-api@latest start
 
 ## Using with Docker
 
-Build the image:
+The image runs as the non-root `bun` user and stores GitHub authentication data, provider configuration, and other gateway state in `/data`. Docker Compose is the recommended way to run it with persistent storage and the supplied security settings.
+
+**Upgrading an existing Docker deployment?** Follow the [migration instructions](docs/docker.md#root-image-or-old-path-migration) first. The old `/root/.local/share/copilot-api` mount must move to `/data`, and its files must be accessible to the non-root user.
+
+### Quick start with Docker Compose
+
+For a new installation, run these commands from the repository root. Do not overwrite an existing `.env` file. Replace `YOUR_GATEWAY_API_KEY` with a strong key for clients connecting to this gateway:
 
 ```sh
-docker build -t copilot-api .
+cp .env.example .env
+docker compose build
+docker compose run --rm copilot-api auth keys --add YOUR_GATEWAY_API_KEY
 ```
 
-Run the container with a bind mount so auth data survives restarts:
+Next, configure an upstream provider. For interactive sign-in or provider setup:
 
 ```sh
-mkdir -p ./copilot-data
-docker run --rm -v $(pwd)/copilot-data:/root/.local/share/copilot-api copilot-api --auth keys --add your-gateway-api-key
-docker run -p 4141:4141 -v $(pwd)/copilot-data:/root/.local/share/copilot-api copilot-api
+docker compose run --rm copilot-api auth login
 ```
 
-This stores GitHub auth data, provider config, and other gateway state in `./copilot-data` on the host, mapped to `/root/.local/share/copilot-api` in the container.
-The image explicitly listens on `0.0.0.0` so Docker port publishing works and refuses to start until at least one gateway API key is configured. Non-loopback listeners also restrict CORS to the request's own origin.
+If you already have a GitHub token, **skip `auth login`** and set it in `.env` instead:
 
-Or pass a GitHub token directly:
+```dotenv
+COPILOT_API_GITHUB_TOKEN=your_github_token_here
+```
+
+The legacy `GH_TOKEN` variable remains a fallback when `COPILOT_API_GITHUB_TOKEN` is empty or unset. A GitHub token authorizes access to GitHub Copilot; it does **not** replace the gateway API key configured above. Keep `.env` private and do not commit it. The gateway key passed to `auth keys --add` can appear in shell history and the process list, so initialize it only on a trusted host.
+
+Start the service:
 
 ```sh
-docker run -p 4141:4141 -v $(pwd)/copilot-data:/root/.local/share/copilot-api -e GH_TOKEN=your_github_token_here copilot-api
+docker compose up -d --no-build
+docker compose ps
 ```
 
-The entrypoint exports `GH_TOKEN` as `COPILOT_API_GITHUB_TOKEN`, so the token is handed to the server through the environment instead of the process arguments.
+The default local endpoint is `http://127.0.0.1:4141`; use the gateway key above when configuring your API client. Compose mounts its project-scoped `copilot-api-data` named volume at `/data`, so authentication data and configuration survive container recreation and `docker compose down`. **Do not use `docker compose down -v` unless intentionally deleting that data.**
+
+The server listens on `0.0.0.0:4141` **inside the container** so Docker port publishing works, while Compose publishes the port only on the host's `127.0.0.1` by default. The server refuses this non-loopback listener without a gateway API key and restricts CORS to the request's own origin. To change the host port, set `COPILOT_API_PORT` in `.env`; keep the internal port at `4141` for the health check.
+
+### Run directly with Docker
+
+If you prefer not to use Compose and already have a GitHub token, the following is an alternative **new installation** using a Docker-managed named volume. First securely set and export `COPILOT_API_GITHUB_TOKEN` in your shell; `-e COPILOT_API_GITHUB_TOKEN` passes its value without including the token itself in the Docker command arguments:
+
+```sh
+docker build -t copilot-api:local .
+docker run --rm -v copilot-api-data:/data copilot-api:local auth keys --add YOUR_GATEWAY_API_KEY
+docker run -d --name copilot-api \
+  -p 127.0.0.1:4141:4141 \
+  -v copilot-api-data:/data \
+  -e COPILOT_API_GITHUB_TOKEN \
+  -e XDG_CACHE_HOME=/data/cache \
+  copilot-api:local
+```
+
+If your shell already exports `GH_TOKEN`, use `-e GH_TOKEN` instead; the entrypoint forwards it to the application as `COPILOT_API_GITHUB_TOKEN`. Here, `copilot-api-data` is a named volume, **not** a host directory, and is separate from Compose's default project-prefixed volume. Both initialization and startup must use the same volume. These minimal `docker run` commands do not apply Compose's read-only filesystem, capability restrictions, or log rotation; use Compose for those settings.
+
+### Keep an existing host data directory
+
+To keep data in a host directory such as `./copilot-data`, use the [bind-mount override](docs/docker.md#existing-bind-mounts) after preparing ownership. It maps that host directory to `/data` inside the container, preserving GitHub authentication data, provider configuration, and other gateway state in the same host location. **Do not replace an existing bind mount with a new named volume:** that would select different, initially empty storage. See [Docker deployment and migration](docs/docker.md) for the exact commands, backup and rollback, proxy configuration, and permissions.
 
 ## Electron Desktop App
 
@@ -742,7 +775,7 @@ Gateway API keys live under `auth.apiKeys` in `config.json`. Manage them with `c
 - **auth.adminApiKey:** Single admin key used only for `/admin/*` routes. If missing, the server generates a random key at startup and writes it back to `config.json`. Requests use the same `x-api-key` or `Authorization: Bearer` headers, but regular `auth.apiKeys` never grant access to `/admin/*`.
 - **modelMappings:** Exact `sourceModel -> targetModel` rewrites shared by top-level `POST /v1/messages`, `POST /v1/messages/count_tokens`, `POST /v1/responses`, and `POST /v1/chat/completions` requests. Omit it or leave it as `{}` to disable rewrites. Both the source and target must be non-empty strings. Targets can be regular model IDs or `provider/model` aliases such as `dashscope/qwen3.6-plus`, and the rewrite happens before provider alias parsing. These mappings are not split per interface. The admin endpoints `GET/POST /admin/config/model-mappings` read and update only this field.
 - **extraPrompts:** Map of `model -> prompt` appended to the first system prompt when translating Anthropic-style requests to Responses API. Use this to inject guardrails or guidance per model. Missing default entries are auto-added without overwriting your custom prompts. For GPT-5.3+ models (e.g. `gpt-5.3-codex`, `gpt-5.4`, `gpt-5.5`), a built-in commentary prompt is used as fallback when not explicitly configured. The built-in prompts enable phase-aware commentary, which lets the model emit a short user-facing progress update before tools or deeper reasoning.
-- **providers:** Global upstream provider map. Each provider key (for example `dashscope`) becomes a route prefix (`/dashscope/v1/messages`). Supports `type: "anthropic"`, `type: "openai-compatible"`, and `type: "openai-responses"`. Top-level clients can also use `model: "dashscope/model-id"` with `/v1/messages`, `/v1/messages/count_tokens`, `/v1/responses`, and `/v1/chat/completions`; the gateway strips the `dashscope/` prefix before forwarding upstream. The `/v1/responses` route for `anthropic` and `openai-compatible` providers uses the Responses Lite → Messages adapter; `openai-compatible` providers then reuse the Messages → Chat translation. Codex clients (`User-Agent` starting with `codex`) also use the adapter for non-`gpt-*` models on `openai-responses` providers. `GET /v1/models` aggregates enabled provider models with `provider/model-id` IDs, while the top-level Codex-UA catalog also merges these adaptable models as `use_responses_lite` entries (except DeepSeek models, which use `use_responses_lite: false` and `tool_mode: null`). Use `GET /dashscope/v1/models` for a single provider's raw model list.
+- **providers:** Global upstream provider map. Each provider key (for example `dashscope`) becomes a route prefix (`/dashscope/v1/messages`). Supports `type: "anthropic"`, `type: "openai-compatible"`, and `type: "openai-responses"`. Top-level clients can also use `model: "dashscope/model-id"` with `/v1/messages`, `/v1/messages/count_tokens`, `/v1/responses`, and `/v1/chat/completions`; the gateway strips the `dashscope/` prefix before forwarding upstream. The `/v1/responses` route for `anthropic` and `openai-compatible` providers uses the Responses Lite → Messages adapter; `openai-compatible` providers then reuse the Messages → Chat translation. Codex clients (`User-Agent` starting with `codex`) also use the adapter for non-`gpt-*` models on `openai-responses` providers. `GET /v1/models` aggregates enabled provider models with `provider/model-id` IDs, while the top-level Codex-UA catalog also merges these adaptable models as `use_responses_lite` entries. Use `GET /dashscope/v1/models` for a single provider's raw model list.
   - `enabled` defaults to `true` if omitted.
   - `baseUrl` should be provider API base URL without the final endpoint. For Anthropic providers, omit `/v1/messages`; for OpenAI-compatible providers, omit `/v1/chat/completions`; for OpenAI Responses providers, omit `/v1/responses`.
   - `apiKey` is used as the upstream credential value and is required unless `authType` is `azure-entra`. It is also not required for CloudGPT with `authType: "azure-cli"` or LLM API with `authType: "llmapi-broker"`.
