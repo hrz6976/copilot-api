@@ -100,6 +100,23 @@ const CLOUDGPT_GPT56_LUNA_PRICING: TokenUsagePricingConfig = {
   input: 1,
   output: 6,
 }
+const CLOUDGPT_GPT6_ASTRA_PRICING: TokenUsagePricingConfig = {
+  tiers: [
+    {
+      cacheCreationInput: 12.5,
+      cachedInput: 1,
+      input: 10,
+      maxInputTokens: 272_000,
+      output: 50,
+    },
+    {
+      cacheCreationInput: 25,
+      cachedInput: 2,
+      input: 20,
+      output: 75,
+    },
+  ],
+}
 const CLOUDGPT_GROK_FAST_PRICING: TokenUsagePricingConfig = {
   cachedInput: 0.05,
   input: 0.2,
@@ -158,7 +175,19 @@ export class BuiltinProviderModelRegistry {
           output: 0.51,
         },
       },
+      "deepseek-v4-flash-0731": {
+        pricing: {
+          input: 0.19,
+          output: 0.51,
+        },
+      },
       "deepseek-v4-pro": {
+        pricing: {
+          input: 1.74,
+          output: 3.48,
+        },
+      },
+      "deepseek-v4-pro-0813": {
         pricing: {
           input: 1.74,
           output: 3.48,
@@ -255,7 +284,11 @@ export class BuiltinProviderModelRegistry {
       "gpt-5.6-luna-20260709": { pricing: CLOUDGPT_GPT56_LUNA_PRICING },
       "gpt-5.6-sol-20260709": { pricing: CLOUDGPT_GPT56_SOL_PRICING },
       "gpt-5.6-terra-20260709": { pricing: CLOUDGPT_GPT56_TERRA_PRICING },
+      "gpt-6-astra-20260903": { pricing: CLOUDGPT_GPT6_ASTRA_PRICING },
       "gpt-chat-latest-20260505": { pricing: CLOUDGPT_GPT52_PRICING },
+      "gpt-chat-latest-20260528": { pricing: CLOUDGPT_GPT52_PRICING },
+      "gpt-chat-latest-20260624": { pricing: CLOUDGPT_GPT52_PRICING },
+      "gpt-chat-latest-20260806": { pricing: CLOUDGPT_GPT52_PRICING },
       "grok-3": {
         pricing: {
           cachedInput: 0.75,
@@ -311,6 +344,23 @@ export class BuiltinProviderModelRegistry {
           ],
         },
       },
+      "grok-4.6": {
+        pricing: {
+          tiers: [
+            {
+              cachedInput: 0.5,
+              input: 2,
+              maxInputTokens: 200_000,
+              output: 6,
+            },
+            {
+              cachedInput: 1,
+              input: 4,
+              output: 12,
+            },
+          ],
+        },
+      },
       "grok-code-fast-1": {
         pricing: {
           cachedInput: 0.02,
@@ -344,6 +394,13 @@ export class BuiltinProviderModelRegistry {
           cachedInput: 0.19,
           input: 0.95,
           output: 4,
+        },
+      },
+      "kimi-k3": {
+        pricing: {
+          cachedInput: 0.3,
+          input: 3,
+          output: 15,
         },
       },
       "llama-3.3-70b-instruct": {

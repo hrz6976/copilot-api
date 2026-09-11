@@ -170,7 +170,7 @@ describe("builtin provider config", () => {
 
     const output = runScript(
       tempDir,
-      'const { isGpt56OrAbove } = await import("./src/lib/config"); console.log(JSON.stringify({ "gpt-5.5": isGpt56OrAbove("gpt-5.5"), "gpt-5.6": isGpt56OrAbove("gpt-5.6"), "gpt-5.6-sol": isGpt56OrAbove("gpt-5.6-sol"), "gpt-5.6-terra": isGpt56OrAbove("gpt-5.6-terra"), "gpt-5.6-luna": isGpt56OrAbove("gpt-5.6-luna"), "gpt-6": isGpt56OrAbove("gpt-6"), "gpt-5-mini": isGpt56OrAbove("gpt-5-mini"), "claude-opus": isGpt56OrAbove("claude-opus") }));',
+      'const { isGpt56OrAbove } = await import("./src/lib/config"); console.log(JSON.stringify({ "gpt-5.5": isGpt56OrAbove("gpt-5.5"), "gpt-5.6": isGpt56OrAbove("gpt-5.6"), "gpt-5.6-sol": isGpt56OrAbove("gpt-5.6-sol"), "gpt-5.6-terra": isGpt56OrAbove("gpt-5.6-terra"), "gpt-5.6-luna": isGpt56OrAbove("gpt-5.6-luna"), "gpt-6": isGpt56OrAbove("gpt-6"), "gpt-6-astra-20260903": isGpt56OrAbove("gpt-6-astra-20260903"), "gpt-5-mini": isGpt56OrAbove("gpt-5-mini"), "claude-opus": isGpt56OrAbove("claude-opus") }));',
     )
 
     expect(JSON.parse(output)).toEqual({
@@ -180,6 +180,7 @@ describe("builtin provider config", () => {
       "gpt-5.6-terra": true,
       "gpt-5.6-luna": true,
       "gpt-6": true,
+      "gpt-6-astra-20260903": true,
       "gpt-5-mini": false,
       "claude-opus": false,
     })

@@ -152,6 +152,81 @@ describe("builtin provider model registry", () => {
     })
   })
 
+  test("prices GPT-6 Astra on CloudGPT with a long-context tier", () => {
+    expect(
+      builtinProviderModelRegistry.getModelConfig(
+        "cloudgpt",
+        "gpt-6-astra-20260903",
+      ),
+    ).toEqual({
+      pricing: {
+        tiers: [
+          {
+            cacheCreationInput: 12.5,
+            cachedInput: 1,
+            input: 10,
+            maxInputTokens: 272_000,
+            output: 50,
+          },
+          {
+            cacheCreationInput: 25,
+            cachedInput: 2,
+            input: 20,
+            output: 75,
+          },
+        ],
+      },
+    })
+  })
+
+  test("prices Grok 4.6 on CloudGPT with a doubled long-context band", () => {
+    expect(
+      builtinProviderModelRegistry.getModelConfig("cloudgpt", "grok-4.6"),
+    ).toEqual({
+      pricing: {
+        tiers: [
+          {
+            cachedInput: 0.5,
+            input: 2,
+            maxInputTokens: 200_000,
+            output: 6,
+          },
+          {
+            cachedInput: 1,
+            input: 4,
+            output: 12,
+          },
+        ],
+      },
+    })
+  })
+
+  test("prices Kimi K3 on CloudGPT", () => {
+    expect(
+      builtinProviderModelRegistry.getModelConfig("cloudgpt", "Kimi-K3"),
+    ).toEqual({
+      pricing: {
+        cachedInput: 0.3,
+        input: 3,
+        output: 15,
+      },
+    })
+  })
+
+  test("prices dated CloudGPT snapshots like their base models", () => {
+    for (const [snapshot, base] of [
+      ["DeepSeek-V4-Flash-0731", "DeepSeek-V4-Flash"],
+      ["DeepSeek-V4-Pro-0813", "DeepSeek-V4-Pro"],
+      ["gpt-chat-latest-20260528", "gpt-chat-latest-20260505"],
+      ["gpt-chat-latest-20260624", "gpt-chat-latest-20260505"],
+      ["gpt-chat-latest-20260806", "gpt-chat-latest-20260505"],
+    ] as const) {
+      expect(
+        builtinProviderModelRegistry.getModelConfig("cloudgpt", snapshot),
+      ).toEqual(builtinProviderModelRegistry.getModelConfig("cloudgpt", base))
+    }
+  })
+
   test("returns empty results for unknown providers and models", () => {
     expect(builtinProviderModelRegistry.getModelIds("unknown")).toEqual([])
     expect(

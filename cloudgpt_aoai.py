@@ -27,14 +27,15 @@ cloudgpt_available_models = Literal[
     "gpt-5.4-mini-20260317",  # ChatCompletions, Responses
     "gpt-5.4-nano-20260317",  # ChatCompletions, Responses
     "gpt-5.5-20260424",  # ChatCompletions, Responses
+    "gpt-5.6-sol-20260709",  # ChatCompletions, Responses
+    "gpt-5.6-terra-20260709",  # ChatCompletions, Responses
+    "gpt-5.6-luna-20260709",  # ChatCompletions, Responses
+    "gpt-6-astra-20260903",  # ChatCompletions, Responses
     # Chat models
-    "gpt-5-chat-20250807",  # ChatCompletions, Responses
-    "gpt-5-chat-20251003",  # ChatCompletions, Responses
-    "gpt-5.1-chat-20251113",  # ChatCompletions, Responses
-    "gpt-5.2-chat-20251211",  # ChatCompletions, Responses
-    "gpt-5.2-chat-20260210",  # ChatCompletions, Responses
-    "gpt-5.3-chat-20260303",  # ChatCompletions, Responses
     "gpt-chat-latest-20260505",  # ChatCompletions, Responses
+    "gpt-chat-latest-20260528",  # ChatCompletions, Responses
+    "gpt-chat-latest-20260624",  # ChatCompletions, Responses
+    "gpt-chat-latest-20260806",  # ChatCompletions, Responses
     # Coding models
     "codex-mini-20250516",  # Responses
     "gpt-5-codex-20250915",  # Responses
@@ -43,8 +44,6 @@ cloudgpt_available_models = Literal[
     "gpt-5.1-codex-max-20251204",  # Responses
     "gpt-5.2-codex-20260114",  # Responses
     "gpt-5.3-codex-20260224",  # Responses
-    # Computer use models
-    "computer-use-preview-20250311",  # Responses
     # Reasoning models
     "o1-20241217", # ChatCompletions, Responses
     "o3-mini-20250131", # ChatCompletions, Responses
@@ -57,40 +56,34 @@ cloudgpt_available_models = Literal[
     "text-embedding-3-small", # Embeddings
     "text-embedding-3-large", # Embeddings
     # Open source models
-    "gpt-oss-20b", # ChatCompletions
     "gpt-oss-120b", # ChatCompletions
     ##########################################################################
     # xAI Models
     ##########################################################################
-    "grok-3", # ChatCompletions
-    "grok-3-mini", # ChatCompletions
     "grok-4", # ChatCompletions
-    "grok-4-fast-reasoning", # ChatCompletions
-    "grok-4-fast-non-reasoning", # ChatCompletions
     "grok-code-fast-1", # ChatCompletions
     "grok-4-1-fast-reasoning", # ChatCompletions
     "grok-4-1-fast-non-reasoning", # ChatCompletions
     "grok-4-20-reasoning", # ChatCompletions
     "grok-4-20-non-reasoning", # ChatCompletions
     "grok-4.3", # ChatCompletions
+    "grok-4.6", # ChatCompletions
     ##########################################################################
     # DeepSeek Models
     ##########################################################################
-    "DeepSeek-V3-0324", # ChatCompletions
-    "DeepSeek-R1", # ChatCompletions
-    "DeepSeek-R1-0528", # ChatCompletions
-    "DeepSeek-V3.1", # ChatCompletions
     "DeepSeek-V3.2", # ChatCompletions
     "DeepSeek-V3.2-Speciale", # ChatCompletions
     "DeepSeek-V4-Flash", # ChatCompletions
     "DeepSeek-V4-Pro", # ChatCompletions
+    "DeepSeek-V4-Flash-0731", # ChatCompletions
+    "DeepSeek-V4-Pro-0813", # ChatCompletions
     ##########################################################################
     # Moonshot Models
     ##########################################################################
-    "Kimi-K2-Thinking", # ChatCompletions
     "Kimi-K2.5", # ChatCompletions
     "Kimi-K2.6", # ChatCompletions
     "Kimi-K2.7-Code", # ChatCompletions
+    "Kimi-K3", # ChatCompletions
     ##########################################################################
     # Meta Models
     ##########################################################################
@@ -103,15 +96,14 @@ cloudgpt_available_models = Literal[
     "gpt-image-1-mini", # ImageGeneration, ImageEdit
     "gpt-image-1.5", # ImageGeneration, ImageEdit
     "gpt-image-2", # ImageGeneration, ImageEdit
-    "MAI-Image-2", # MAI-ImageGeneration
+    "gpt-image-2.5-flare", # ImageGeneration, ImageEdit
+    "gpt-image-2.5-sunburst", # ImageGeneration, ImageEdit
     "MAI-Image-2e", # MAI-ImageGeneration
     "MAI-Image-2.5", # MAI-ImageGeneration
+    "MAI-Image-2.5-Pro", # MAI-ImageGeneration
     "MAI-Image-2.5-Flash", # MAI-ImageGeneration
-    ##########################################################################
-    # Video Generation Models
-    ##########################################################################
-    "sora-20250502", # Videos
-    "sora-2-20251006", # Videos
+    "MAI-Image-2.6", # MAI-ImageGeneration
+    "MAI-Image-2.6-Flash", # MAI-ImageGeneration
 ]
 
 ###########################################################################

@@ -78,4 +78,70 @@ describe("token usage pricing", () => {
       })
     }
   })
+  test("uses CloudGPT Grok 4.6 pricing across its long-context band", () => {
+    const belowBand = resolveTokenUsageCost({
+      cache_read_input_tokens: 2_000,
+      input_tokens: 1_000,
+      model: "grok-4.6",
+      output_tokens: 3_000,
+      providerName: "cloudgpt",
+      source: "provider",
+    })
+
+    expect(belowBand).toEqual({
+      currency: "USD",
+      source: "builtin",
+      total_cost_nanos: 21_000_000,
+    })
+
+    const aboveBand = resolveTokenUsageCost({
+      cache_read_input_tokens: 100_000,
+      input_tokens: 300_000,
+      model: "grok-4.6",
+      output_tokens: 10_000,
+      providerName: "cloudgpt",
+      source: "provider",
+    })
+
+    expect(aboveBand).toEqual({
+      currency: "USD",
+      source: "builtin",
+      total_cost_nanos: 1_420_000_000,
+    })
+  })
+
+  test("uses CloudGPT GPT-6 Astra pricing including cache creation", () => {
+    const cost = resolveTokenUsageCost({
+      cache_creation_input_tokens: 500,
+      cache_read_input_tokens: 2_000,
+      input_tokens: 1_000,
+      model: "gpt-6-astra-20260903",
+      output_tokens: 3_000,
+      providerName: "cloudgpt",
+      source: "provider",
+    })
+
+    expect(cost).toEqual({
+      currency: "USD",
+      source: "builtin",
+      total_cost_nanos: 168_250_000,
+    })
+  })
+
+  test("uses CloudGPT Kimi K3 pricing", () => {
+    const cost = resolveTokenUsageCost({
+      cache_read_input_tokens: 2_000,
+      input_tokens: 1_000,
+      model: "Kimi-K3",
+      output_tokens: 3_000,
+      providerName: "cloudgpt",
+      source: "provider",
+    })
+
+    expect(cost).toEqual({
+      currency: "USD",
+      source: "builtin",
+      total_cost_nanos: 48_600_000,
+    })
+  })
 })
