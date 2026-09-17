@@ -126,6 +126,7 @@ export interface ProviderConfig {
   apiKey?: string
   authType?: ProviderAuthType
   transport?: ProviderTransport
+  accountId?: string
   pricingCurrency?: string
   models?: Record<string, ModelConfig>
 }

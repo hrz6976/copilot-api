@@ -13,10 +13,16 @@ import {
   QUICK_PROVIDER_CONFIGS,
   type QuickProviderConfig,
 } from '../../src/lib/quick-providers'
-import { persistCodexCredentials } from '../../src/lib/token'
+import {
+  getCodexAccounts,
+  persistCodexCredentials,
+  removeCodexAccount,
+  selectCodexAccount,
+} from '../../src/lib/token'
 import type {
   AuthResult,
   AuthStatus,
+  CodexAccountSummary,
   DesktopAuthMode,
   ProviderAuthInput,
 } from '../src/types/ipc'
@@ -37,6 +43,7 @@ interface ProviderConfigDependencies {
 }
 
 export interface CodexDesktopLoginOptions {
+  alias?: string
   callbackUrlOrCode?: string
   openUrl: (url: string) => void | Promise<void>
 }
@@ -45,6 +52,13 @@ interface CodexDesktopLoginDependencies {
   getEnabledProviders?: () => string[]
   loginCodex?: typeof loginCodex
   persistCodexCredentials?: typeof persistCodexCredentials
+}
+
+interface CodexDesktopAccountDependencies {
+  getCodexAccounts?: typeof getCodexAccounts
+  getEnabledProviders?: () => string[]
+  removeCodexAccount?: typeof removeCodexAccount
+  selectCodexAccount?: typeof selectCodexAccount
 }
 
 function isCustomProviderAuthType(value: string): value is ProviderAuthType {
@@ -278,8 +292,51 @@ export async function loginCodexForDesktop(
     },
   })
 
-  await persistCredentials(credentials, { enableProvider: true })
+  await persistCredentials(credentials, {
+    activateAccount: true,
+    alias: options.alias?.trim() || undefined,
+    enableProvider: true,
+  })
 
+  return {
+    success: true,
+    mode: 'provider',
+    providers: getEnabledProviders(),
+  }
+}
+
+export async function getDesktopCodexAccounts(
+  dependencies: Pick<CodexDesktopAccountDependencies, 'getCodexAccounts'> = {},
+): Promise<Array<CodexAccountSummary>> {
+  const listAccounts = dependencies.getCodexAccounts ?? getCodexAccounts
+  return await listAccounts()
+}
+
+export async function selectCodexAccountForDesktop(
+  accountId: string,
+  dependencies: CodexDesktopAccountDependencies = {},
+): Promise<AuthResult> {
+  const selectAccount = dependencies.selectCodexAccount ?? selectCodexAccount
+  const getEnabledProviders =
+    dependencies.getEnabledProviders ?? getEnabledDesktopProviders
+
+  await selectAccount(accountId)
+  return {
+    success: true,
+    mode: 'provider',
+    providers: getEnabledProviders(),
+  }
+}
+
+export async function removeCodexAccountForDesktop(
+  accountId: string,
+  dependencies: CodexDesktopAccountDependencies = {},
+): Promise<AuthResult> {
+  const removeAccount = dependencies.removeCodexAccount ?? removeCodexAccount
+  const getEnabledProviders =
+    dependencies.getEnabledProviders ?? getEnabledDesktopProviders
+
+  await removeAccount(accountId)
   return {
     success: true,
     mode: 'provider',

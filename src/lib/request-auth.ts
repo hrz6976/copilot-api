@@ -47,7 +47,7 @@ export function getMissingApiKeysMessage(): string | null {
 
   return [
     "Requests currently bypass authentication.",
-    "Run `npx copilot-api auth keys --add <key>` to enable API key auth.",
+    "Run `npx @hrz6976/copilot-api@latest auth keys --add <key>` to enable API key auth.",
   ].join(" ")
 }
 

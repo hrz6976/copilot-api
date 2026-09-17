@@ -3,8 +3,11 @@ import { describe, expect, test } from 'bun:test'
 import {
   configureDesktopProvider,
   configureProviderWithAuthStatus,
+  getDesktopCodexAccounts,
   getDesktopAuthStatus,
   loginCodexForDesktop,
+  removeCodexAccountForDesktop,
+  selectCodexAccountForDesktop,
   shouldStartInProviderMode,
 } from '../electron/provider-auth'
 import type { ProviderConfig } from '../../src/lib/config'
@@ -325,11 +328,11 @@ describe('desktop provider auth', () => {
     expect(writes).toBe(0)
   })
 
-  test('reports desktop auth status from token and provider dependencies', async () => {
-    await expect(
+  test('reports desktop auth status from token and provider dependencies', () => {
+    expect(
       getDesktopAuthStatus({
         listEnabledProviders: () => [],
-        readToken: async () => null,
+        readToken: () => Promise.resolve(null),
       }),
     ).resolves.toEqual({
       mode: 'none',
@@ -337,13 +340,11 @@ describe('desktop provider auth', () => {
       success: false,
     })
 
-    await expect(
+    expect(
       getDesktopAuthStatus({
         listEnabledProviders: () => ['deepseek'],
-        readToken: async () => 'stale-token',
-        verifyGitHubToken: async () => {
-          throw new Error('stale')
-        },
+        readToken: () => Promise.resolve('stale-token'),
+        verifyGitHubToken: () => Promise.reject(new Error('stale')),
       }),
     ).resolves.toEqual({
       mode: 'provider',
@@ -351,12 +352,13 @@ describe('desktop provider auth', () => {
       success: true,
     })
 
-    await expect(
+    expect(
       getDesktopAuthStatus({
         listEnabledProviders: () => [],
-        readToken: async () => 'valid-token',
-        verifyGitHubToken: async (token) => {
+        readToken: () => Promise.resolve('valid-token'),
+        verifyGitHubToken: (token) => {
           expect(token).toBe('valid-token')
+          return Promise.resolve()
         },
       }),
     ).resolves.toEqual({
@@ -370,9 +372,12 @@ describe('desktop provider auth', () => {
     let promptValue = ''
     let persistedAccessToken = ''
     let enableProvider: boolean | undefined
+    let activateAccount: boolean | undefined
+    let persistedAlias: string | undefined
 
     const result = await loginCodexForDesktop(
       {
+        alias: ' Work ',
         callbackUrlOrCode: ' callback-code ',
         openUrl: (url) => {
           openedUrl = url
@@ -390,9 +395,12 @@ describe('desktop provider auth', () => {
             refreshToken: 'codex-refresh-token',
           }
         },
-        persistCodexCredentials: async (credentials, options) => {
+        persistCodexCredentials: (credentials, options) => {
           persistedAccessToken = credentials.accessToken
           enableProvider = options?.enableProvider
+          activateAccount = options?.activateAccount
+          persistedAlias = options?.alias
+          return Promise.resolve()
         },
       },
     )
@@ -401,6 +409,59 @@ describe('desktop provider auth', () => {
     expect(promptValue).toBe('callback-code')
     expect(persistedAccessToken).toBe('codex-access-token')
     expect(enableProvider).toBe(true)
+    expect(activateAccount).toBe(true)
+    expect(persistedAlias).toBe('Work')
+    expect(result).toEqual({
+      mode: 'provider',
+      providers: ['codex'],
+      success: true,
+    })
+  })
+
+  test('lists safe Codex account summaries through desktop auth', () => {
+    const accounts = [
+      { accountId: 'acct_one', alias: 'Work', active: true },
+      { accountId: 'acct_two', active: false },
+    ]
+
+    expect(
+      getDesktopCodexAccounts({
+        getCodexAccounts: () => Promise.resolve(accounts),
+      }),
+    ).resolves.toEqual(accounts)
+  })
+
+  test('selects a Codex account without restarting the server', async () => {
+    let selectedAccountId = ''
+
+    const result = await selectCodexAccountForDesktop('acct_two', {
+      getEnabledProviders: () => ['codex'],
+      selectCodexAccount: (accountId) => {
+        selectedAccountId = accountId
+        return Promise.resolve({ accountId, active: true })
+      },
+    })
+
+    expect(selectedAccountId).toBe('acct_two')
+    expect(result).toEqual({
+      mode: 'provider',
+      providers: ['codex'],
+      success: true,
+    })
+  })
+
+  test('removes an unused Codex account through desktop auth', async () => {
+    let removedAccountId = ''
+
+    const result = await removeCodexAccountForDesktop('acct_two', {
+      getEnabledProviders: () => ['codex'],
+      removeCodexAccount: (accountId) => {
+        removedAccountId = accountId
+        return Promise.resolve({ accountId, active: false })
+      },
+    })
+
+    expect(removedAccountId).toBe('acct_two')
     expect(result).toEqual({
       mode: 'provider',
       providers: ['codex'],
@@ -422,8 +483,8 @@ describe('desktop provider auth', () => {
         getRawProviderConfig: () => null,
         setProviderConfig: () => ({}),
         listEnabledProviders: () => ['deepseek'],
-        readToken: async () => 'valid-token',
-        verifyGitHubToken: async () => {},
+        readToken: () => Promise.resolve('valid-token'),
+        verifyGitHubToken: () => Promise.resolve(),
       },
     )
 
@@ -438,7 +499,7 @@ describe('desktop provider auth', () => {
         getRawProviderConfig: () => null,
         setProviderConfig: () => ({}),
         listEnabledProviders: () => ['deepseek'],
-        readToken: async () => null,
+        readToken: () => Promise.resolve(null),
       },
     )
 
@@ -457,10 +518,8 @@ describe('desktop provider auth', () => {
         getRawProviderConfig: () => null,
         setProviderConfig: () => ({}),
         listEnabledProviders: () => ['deepseek'],
-        readToken: async () => 'stale-token',
-        verifyGitHubToken: async () => {
-          throw new Error('stale')
-        },
+        readToken: () => Promise.resolve('stale-token'),
+        verifyGitHubToken: () => Promise.reject(new Error('stale')),
       },
     )
 
@@ -472,22 +531,23 @@ describe('desktop provider auth', () => {
   })
 
   test('configureProviderWithAuthStatus rethrows configuration validation errors', async () => {
-    await expect(
-      configureProviderWithAuthStatus(
-        {
-          apiKey: '   ',
-          baseUrl: 'https://example.com',
-          provider: 'deepseek',
-          type: 'anthropic',
-        },
-        {
-          getEnabledProviders: () => [],
-          getRawProviderConfig: () => null,
-          setProviderConfig: () => ({}),
-          listEnabledProviders: () => [],
-          readToken: async () => null,
-        },
-      ),
-    ).rejects.toThrow('apiKey must be a non-empty string')
+    const error = await configureProviderWithAuthStatus(
+      {
+        apiKey: '   ',
+        baseUrl: 'https://example.com',
+        provider: 'deepseek',
+        type: 'anthropic',
+      },
+      {
+        getEnabledProviders: () => [],
+        getRawProviderConfig: () => null,
+        setProviderConfig: () => ({}),
+        listEnabledProviders: () => [],
+        readToken: () => Promise.resolve(null),
+      },
+    ).catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toBe('apiKey must be a non-empty string')
   })
 })
