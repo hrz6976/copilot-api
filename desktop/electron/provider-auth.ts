@@ -130,12 +130,16 @@ function buildProviderConfig(
     baseUrl: string
     pricingCurrency?: string
     type: ProviderType
+    modelsDevProviderId?: string
   },
 ): ProviderConfig {
   return {
     type: options.type,
     enabled: true,
     baseUrl: options.baseUrl,
+    ...(options.modelsDevProviderId ?
+      { modelsDevProviderId: options.modelsDevProviderId }
+    : {}),
     ...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
     ...(options.authType ? { authType: options.authType } : {}),
     pricingCurrency:
@@ -219,6 +223,7 @@ export function configureDesktopProvider(
         apiKey: normalizeRequiredApiKey(input.apiKey),
         authType,
         baseUrl: normalizeRequiredBaseUrl(input.baseUrl),
+        modelsDevProviderId: input.modelsDevProviderId,
         type,
       }),
     )

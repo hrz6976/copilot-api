@@ -252,7 +252,7 @@ function handleContent(
   if (delta.content && delta.content.length > 0) {
     closeThinkingBlockIfOpen(state, events)
 
-    if (isToolBlockOpen(state) || hasToolCallDelta(delta)) {
+    if (isToolBlockOpen(state)) {
       state.deferredContent = `${state.deferredContent ?? ""}${delta.content}`
       return
     }
@@ -303,10 +303,6 @@ function handleContent(
     state.contentBlockIndex++
     state.thinkingBlockOpen = false
   }
-}
-
-function hasToolCallDelta(delta: Delta): boolean {
-  return Boolean(delta.tool_calls && delta.tool_calls.length > 0)
 }
 
 function flushDeferredContent(

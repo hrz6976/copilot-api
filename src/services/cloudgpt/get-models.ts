@@ -14,6 +14,7 @@ interface CloudGptModelDefinition {
   modelPickerEnabled?: boolean
   name: string
   parallelToolCalls?: boolean
+  preferredProviderType?: CloudGptChatProviderType
   preview?: boolean
   reasoningEffort?: Array<string>
   structuredOutputs?: boolean
@@ -28,7 +29,6 @@ const RESPONSES_ENDPOINT = "/v1/responses"
 const EMBEDDINGS_ENDPOINT = "/v1/embeddings"
 const IMAGE_GENERATIONS_ENDPOINT = "/v1/images/generations"
 const IMAGE_EDITS_ENDPOINT = "/v1/images/edits"
-const VIDEOS_ENDPOINT = "/v1/videos"
 
 const CHAT_AND_RESPONSES = [CHAT_COMPLETIONS_ENDPOINT, RESPONSES_ENDPOINT]
 const RESPONSES_ONLY = [RESPONSES_ENDPOINT]
@@ -373,84 +373,47 @@ export const CLOUDGPT_MODEL_CATALOG = [
     structuredOutputs: true,
   },
   {
-    id: "gpt-5-chat-20250807",
-    name: "GPT-5 Chat",
+    id: "gpt-6.1-sol-20260929",
+    preferredProviderType: "openai-responses",
+    name: "GPT-6.1 Sol",
     vendor: "openai",
-    family: "gpt-chat",
+    family: "gpt",
     kind: "chat",
-    contextWindow: 128_000,
-    maxOutputTokens: 16_384,
-    input: TEXT_IMAGE_INPUT,
+    contextWindow: 1_050_000,
+    maxOutputTokens: 128_000,
+    input: TEXT_IMAGE_PDF_INPUT,
     endpoints: CHAT_AND_RESPONSES,
-    toolCalls: false,
-    structuredOutputs: true,
-  },
-  {
-    id: "gpt-5-chat-20251003",
-    name: "GPT-5 Chat (2025-10-03)",
-    vendor: "openai",
-    family: "gpt-chat",
-    kind: "chat",
-    contextWindow: 128_000,
-    maxOutputTokens: 16_384,
-    input: TEXT_IMAGE_INPUT,
-    endpoints: CHAT_AND_RESPONSES,
-    toolCalls: false,
-    structuredOutputs: true,
-  },
-  {
-    id: "gpt-5.1-chat-20251113",
-    name: "GPT-5.1 Chat",
-    vendor: "openai",
-    family: "gpt-chat",
-    kind: "chat",
-    contextWindow: 128_000,
-    maxOutputTokens: 16_384,
-    input: TEXT_IMAGE_INPUT,
-    endpoints: CHAT_AND_RESPONSES,
-    reasoningEffort: ["medium"],
+    reasoningEffort: GPT6_REASONING_EFFORTS,
     toolCalls: true,
     structuredOutputs: true,
   },
   {
-    id: "gpt-5.2-chat-20251211",
-    name: "GPT-5.2 Chat",
+    id: "gpt-6-sol-20260922",
+    preferredProviderType: "openai-responses",
+    name: "GPT-6 Sol",
     vendor: "openai",
-    family: "gpt-chat",
+    family: "gpt",
     kind: "chat",
-    contextWindow: 128_000,
-    maxOutputTokens: 16_384,
-    input: TEXT_IMAGE_INPUT,
+    contextWindow: 1_050_000,
+    maxOutputTokens: 128_000,
+    input: TEXT_IMAGE_PDF_INPUT,
     endpoints: CHAT_AND_RESPONSES,
-    reasoningEffort: ["medium"],
+    reasoningEffort: GPT6_REASONING_EFFORTS,
     toolCalls: true,
     structuredOutputs: true,
   },
   {
-    id: "gpt-5.2-chat-20260210",
-    name: "GPT-5.2 Chat (2026-02-10)",
+    id: "gpt-6-luna-20260922",
+    preferredProviderType: "openai-responses",
+    name: "GPT-6 Luna",
     vendor: "openai",
-    family: "gpt-chat",
+    family: "gpt",
     kind: "chat",
-    contextWindow: 128_000,
-    maxOutputTokens: 16_384,
-    input: TEXT_IMAGE_INPUT,
+    contextWindow: 1_050_000,
+    maxOutputTokens: 128_000,
+    input: TEXT_IMAGE_PDF_INPUT,
     endpoints: CHAT_AND_RESPONSES,
-    reasoningEffort: ["medium"],
-    toolCalls: true,
-    structuredOutputs: true,
-  },
-  {
-    id: "gpt-5.3-chat-20260303",
-    name: "GPT-5.3 Chat",
-    vendor: "openai",
-    family: "gpt-chat",
-    kind: "chat",
-    contextWindow: 128_000,
-    maxOutputTokens: 16_384,
-    input: TEXT_IMAGE_INPUT,
-    endpoints: CHAT_AND_RESPONSES,
-    reasoningEffort: ["medium"],
+    reasoningEffort: GPT6_REASONING_EFFORTS,
     toolCalls: true,
     structuredOutputs: true,
   },
@@ -608,20 +571,6 @@ export const CLOUDGPT_MODEL_CATALOG = [
     structuredOutputs: true,
   },
   {
-    id: "computer-use-preview-20250311",
-    name: "Computer Use Preview",
-    vendor: "openai",
-    family: "computer-use",
-    kind: "chat",
-    contextWindow: 8_192,
-    maxOutputTokens: 1_024,
-    input: TEXT_IMAGE_INPUT,
-    endpoints: RESPONSES_ONLY,
-    preview: true,
-    toolCalls: true,
-    modelPickerEnabled: false,
-  },
-  {
     id: "o1-20241217",
     name: "o1",
     vendor: "openai",
@@ -764,31 +713,6 @@ export const CLOUDGPT_MODEL_CATALOG = [
     toolCalls: true,
   },
   {
-    id: "grok-3",
-    name: "Grok 3",
-    vendor: "xai",
-    family: "grok",
-    kind: "chat",
-    contextWindow: 131_072,
-    maxOutputTokens: 131_072,
-    input: TEXT_INPUT,
-    endpoints: CHAT_COMPLETIONS_ONLY,
-    toolCalls: true,
-  },
-  {
-    id: "grok-3-mini",
-    name: "Grok 3 Mini",
-    vendor: "xai",
-    family: "grok",
-    kind: "chat",
-    contextWindow: 131_072,
-    maxOutputTokens: 131_072,
-    input: TEXT_INPUT,
-    endpoints: CHAT_COMPLETIONS_ONLY,
-    reasoningEffort: O_SERIES_REASONING_EFFORTS,
-    toolCalls: true,
-  },
-  {
     id: "grok-4",
     name: "Grok 4",
     vendor: "xai",
@@ -801,31 +725,6 @@ export const CLOUDGPT_MODEL_CATALOG = [
     reasoningEffort: ["none", "low", "medium", "high"],
     toolCalls: true,
     structuredOutputs: true,
-  },
-  {
-    id: "grok-4-fast-reasoning",
-    name: "Grok 4 Fast (Reasoning)",
-    vendor: "xai",
-    family: "grok",
-    kind: "chat",
-    contextWindow: 2_000_000,
-    maxOutputTokens: 30_000,
-    input: TEXT_IMAGE_INPUT,
-    endpoints: CHAT_COMPLETIONS_ONLY,
-    reasoningEffort: O_SERIES_REASONING_EFFORTS,
-    toolCalls: true,
-  },
-  {
-    id: "grok-4-fast-non-reasoning",
-    name: "Grok 4 Fast (Non-Reasoning)",
-    vendor: "xai",
-    family: "grok",
-    kind: "chat",
-    contextWindow: 2_000_000,
-    maxOutputTokens: 30_000,
-    input: TEXT_IMAGE_INPUT,
-    endpoints: CHAT_COMPLETIONS_ONLY,
-    toolCalls: true,
   },
   {
     id: "grok-code-fast-1",
@@ -918,57 +817,6 @@ export const CLOUDGPT_MODEL_CATALOG = [
     structuredOutputs: true,
   },
   {
-    id: "DeepSeek-V3-0324",
-    name: "DeepSeek V3 0324",
-    vendor: "deepseek",
-    family: "deepseek",
-    kind: "chat",
-    contextWindow: 131_072,
-    maxOutputTokens: 131_072,
-    input: TEXT_INPUT,
-    endpoints: CHAT_COMPLETIONS_ONLY,
-    toolCalls: true,
-  },
-  {
-    id: "DeepSeek-R1",
-    name: "DeepSeek R1",
-    vendor: "deepseek",
-    family: "deepseek-thinking",
-    kind: "chat",
-    contextWindow: 163_840,
-    maxOutputTokens: 163_840,
-    input: TEXT_INPUT,
-    endpoints: CHAT_COMPLETIONS_ONLY,
-    reasoningEffort: [],
-    toolCalls: false,
-  },
-  {
-    id: "DeepSeek-R1-0528",
-    name: "DeepSeek R1 0528",
-    vendor: "deepseek",
-    family: "deepseek-thinking",
-    kind: "chat",
-    contextWindow: 163_840,
-    maxOutputTokens: 163_840,
-    input: TEXT_INPUT,
-    endpoints: CHAT_COMPLETIONS_ONLY,
-    reasoningEffort: [],
-    toolCalls: true,
-  },
-  {
-    id: "DeepSeek-V3.1",
-    name: "DeepSeek V3.1",
-    vendor: "deepseek",
-    family: "deepseek",
-    kind: "chat",
-    contextWindow: 131_072,
-    maxOutputTokens: 131_072,
-    input: TEXT_INPUT,
-    endpoints: CHAT_COMPLETIONS_ONLY,
-    reasoningEffort: [],
-    toolCalls: true,
-  },
-  {
     id: "DeepSeek-V3.2",
     name: "DeepSeek V3.2",
     vendor: "deepseek",
@@ -1037,6 +885,20 @@ export const CLOUDGPT_MODEL_CATALOG = [
     structuredOutputs: true,
   },
   {
+    id: "DeepSeek-V4.1-Flash",
+    name: "DeepSeek V4.1 Flash",
+    vendor: "deepseek",
+    family: "deepseek-flash",
+    kind: "chat",
+    contextWindow: 1_000_000,
+    maxOutputTokens: 384_000,
+    input: TEXT_IMAGE_INPUT,
+    endpoints: CHAT_COMPLETIONS_ONLY,
+    reasoningEffort: [],
+    toolCalls: true,
+    structuredOutputs: true,
+  },
+  {
     id: "DeepSeek-V4-Pro-0813",
     name: "DeepSeek V4 Pro (0813)",
     vendor: "deepseek",
@@ -1049,19 +911,6 @@ export const CLOUDGPT_MODEL_CATALOG = [
     reasoningEffort: [],
     toolCalls: false,
     structuredOutputs: true,
-  },
-  {
-    id: "Kimi-K2-Thinking",
-    name: "Kimi K2 Thinking",
-    vendor: "moonshot",
-    family: "kimi-thinking",
-    kind: "chat",
-    contextWindow: 262_144,
-    maxOutputTokens: 262_144,
-    input: TEXT_INPUT,
-    endpoints: CHAT_COMPLETIONS_ONLY,
-    reasoningEffort: [],
-    toolCalls: true,
   },
   {
     id: "Kimi-K2.5",
@@ -1216,18 +1065,6 @@ export const CLOUDGPT_MODEL_CATALOG = [
     modelPickerEnabled: false,
   },
   {
-    id: "MAI-Image-2",
-    name: "MAI Image 2",
-    vendor: "microsoft",
-    family: "mai-image",
-    kind: "image",
-    contextWindow: 0,
-    maxOutputTokens: 0,
-    input: TEXT_IMAGE_INPUT,
-    endpoints: [IMAGE_GENERATIONS_ENDPOINT],
-    modelPickerEnabled: false,
-  },
-  {
     id: "MAI-Image-2e",
     name: "MAI Image 2e",
     vendor: "microsoft",
@@ -1299,30 +1136,6 @@ export const CLOUDGPT_MODEL_CATALOG = [
     endpoints: [IMAGE_GENERATIONS_ENDPOINT],
     modelPickerEnabled: false,
   },
-  {
-    id: "sora-20250502",
-    name: "Sora (2025-05-02)",
-    vendor: "openai",
-    family: "sora",
-    kind: "video",
-    contextWindow: 0,
-    maxOutputTokens: 0,
-    input: TEXT_IMAGE_VIDEO_INPUT,
-    endpoints: [VIDEOS_ENDPOINT],
-    modelPickerEnabled: false,
-  },
-  {
-    id: "sora-2-20251006",
-    name: "Sora 2",
-    vendor: "openai",
-    family: "sora",
-    kind: "video",
-    contextWindow: 0,
-    maxOutputTokens: 0,
-    input: TEXT_IMAGE_VIDEO_INPUT,
-    endpoints: [VIDEOS_ENDPOINT],
-    modelPickerEnabled: false,
-  },
 ] satisfies Array<CloudGptModelDefinition>
 
 function normalizeCloudGptModel(model: CloudGptModelDefinition): Model {
@@ -1381,21 +1194,24 @@ const CLOUDGPT_ENDPOINT_BY_PROVIDER_TYPE: Record<
 }
 
 // Resolves how a CloudGPT chat model should be reached, based on the
-// endpoints it supports in cloudgpt_aoai.py. `preferredTypes` lets callers
+// endpoints it supports in the builtin catalog. `preferredTypes` lets callers
 // favor their native protocol when a model supports both.
 export function getCloudGptModelProviderType(
   modelId: string,
-  preferredTypes: Array<CloudGptChatProviderType> = [
-    "openai-compatible",
-    "openai-responses",
-  ],
+  preferredTypes?: Array<CloudGptChatProviderType>,
 ): CloudGptChatProviderType | undefined {
-  const model = CLOUDGPT_MODEL_CATALOG.find((entry) => entry.id === modelId)
+  const model: CloudGptModelDefinition | undefined =
+    CLOUDGPT_MODEL_CATALOG.find((entry) => entry.id === modelId)
   if (!model || model.kind !== "chat") {
     return undefined
   }
 
-  for (const providerType of preferredTypes) {
+  // GPT-6 Sol/Luna reject reasoning with function tools on Chat Completions.
+  // Prefer Responses for these deployments unless the caller selects a protocol.
+  for (const providerType of preferredTypes ?? [
+    model.preferredProviderType ?? "openai-compatible",
+    "openai-responses",
+  ]) {
     if (
       model.endpoints.includes(CLOUDGPT_ENDPOINT_BY_PROVIDER_TYPE[providerType])
     ) {

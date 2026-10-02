@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test"
 import {
   CLOUDGPT_MODEL_CATALOG,
   getModels,
+  getCloudGptModelProviderType,
 } from "../src/services/cloudgpt/get-models"
 
 describe("CloudGPT model catalog", () => {
@@ -22,8 +23,11 @@ describe("CloudGPT model catalog", () => {
       "Llama-4-Maverick-17B-128E-Instruct-FP8",
       "MAI-Image-2.5",
       "MAI-Image-2.5-Flash",
-      "sora-2-20251006",
       "gpt-6-astra-20260903",
+      "gpt-6-sol-20260922",
+      "gpt-6.1-sol-20260929",
+      "gpt-6-luna-20260922",
+      "DeepSeek-V4.1-Flash",
       "gpt-chat-latest-20260528",
       "gpt-chat-latest-20260624",
       "gpt-chat-latest-20260806",
@@ -38,7 +42,7 @@ describe("CloudGPT model catalog", () => {
       "MAI-Image-2.6-Flash",
     ]
 
-    expect(CLOUDGPT_MODEL_CATALOG).toHaveLength(95)
+    expect(CLOUDGPT_MODEL_CATALOG).toHaveLength(80)
     expect(new Set(modelIds).size).toBe(modelIds.length)
     for (const modelId of expectedModelIds) {
       expect(modelIds).toContain(modelId)
@@ -275,5 +279,77 @@ describe("CloudGPT model catalog", () => {
         vendor: "microsoft",
       })
     }
+  })
+})
+
+describe("September CloudGPT deployment update", () => {
+  test.each([
+    "gpt-6.1-sol-20260929",
+    "gpt-6-sol-20260922",
+    "gpt-6-luna-20260922",
+  ])("routes %s over either supported protocol", (modelId) => {
+    const model = getModels().data.find((entry) => entry.id === modelId)
+    expect(model).toMatchObject({
+      model_picker_enabled: true,
+      capabilities: {
+        type: "chat",
+        supports: { vision: true, tool_calls: true },
+      },
+    })
+    expect(getCloudGptModelProviderType(modelId)).toBe("openai-responses")
+    expect(getCloudGptModelProviderType(modelId, ["openai-compatible"])).toBe(
+      "openai-compatible",
+    )
+    expect(getCloudGptModelProviderType(modelId, ["openai-responses"])).toBe(
+      "openai-responses",
+    )
+  })
+
+  test("exposes multimodal DeepSeek V4.1 Flash through chat completions", () => {
+    expect(
+      getModels().data.find((entry) => entry.id === "DeepSeek-V4.1-Flash"),
+    ).toMatchObject({
+      capabilities: {
+        limits: { max_context_window_tokens: 1_000_000 },
+        supports: { vision: true, tool_calls: true },
+        type: "chat",
+      },
+      supported_endpoints: ["/v1/chat/completions"],
+    })
+    expect(
+      getCloudGptModelProviderType("DeepSeek-V4.1-Flash", ["openai-responses"]),
+    ).toBeUndefined()
+    expect(getCloudGptModelProviderType("DeepSeek-V4.1-Flash")).toBe(
+      "openai-compatible",
+    )
+  })
+
+  test("does not advertise retired deployments", () => {
+    const ids = getModels().data.map((entry) => entry.id)
+    for (const id of [
+      "gpt-5-chat-20250807",
+      "gpt-5-chat-20251003",
+      "gpt-5.1-chat-20251113",
+      "gpt-5.2-chat-20251211",
+      "gpt-5.2-chat-20260210",
+      "gpt-5.3-chat-20260303",
+      "computer-use-preview-20250311",
+      "sora-20250502",
+      "sora-2-20251006",
+      "grok-3",
+      "grok-3-mini",
+      "grok-4-fast-reasoning",
+      "grok-4-fast-non-reasoning",
+      "DeepSeek-V3-0324",
+      "DeepSeek-R1",
+      "DeepSeek-R1-0528",
+      "DeepSeek-V3.1",
+      "Kimi-K2-Thinking",
+      "MAI-Image-2",
+    ]) {
+      expect(ids).not.toContain(id)
+      expect(getCloudGptModelProviderType(id)).toBeUndefined()
+    }
+    expect(getCloudGptModelProviderType("gpt-image-2.5-flare")).toBeUndefined()
   })
 })

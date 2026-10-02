@@ -8,6 +8,7 @@ import {
 } from "bun:test"
 import { Hono } from "hono"
 
+import { installModelsDevCatalog } from "~/lib/models-dev-cache"
 import { requestContext } from "~/lib/request-context"
 import { state } from "~/lib/state"
 import {
@@ -29,6 +30,8 @@ import {
 } from "~/lib/token-usage/pricing"
 import { traceIdMiddleware } from "~/lib/trace"
 import { tokenUsageRoute } from "~/routes/token-usage/route"
+
+import { modelsDevCatalogFixture } from "./fixtures/models-dev-catalog"
 
 const DB_PATH_ENV = "COPILOT_API_SQLITE_DB_PATH"
 
@@ -432,22 +435,29 @@ describe("token usage storage", () => {
     }
   })
 
-  test("prices OpenCode Go Hy3 and GPT-5.6 Luna with long-context tiers", () => {
-    const shortContextCosts = [
-      { model: "hy3", totalCostNanos: 1_950_000 },
-      { model: "gpt-5.6-luna", totalCostNanos: 2_045_000 },
-      { model: "qwen3.8-max", totalCostNanos: 23_000_000 },
+  test("prices GPT-6.1 Sol cache usage at the 272K input tier boundary", () => {
+    const expectedCosts = [
+      {
+        cache_creation_input_tokens: 1_000,
+        cache_read_input_tokens: 2_000,
+        input_tokens: 269_000,
+        totalCostNanos: 570_700_000,
+      },
+      {
+        cache_creation_input_tokens: 1_000,
+        cache_read_input_tokens: 2_000,
+        input_tokens: 269_001,
+        totalCostNanos: 1_126_404_000,
+      },
     ]
 
-    for (const { model, totalCostNanos } of shortContextCosts) {
+    for (const { totalCostNanos, ...usage } of expectedCosts) {
       expect(
         resolveTokenUsageCost({
-          cache_creation_input_tokens: 1_000,
-          cache_read_input_tokens: 2_000,
-          input_tokens: 1_000,
-          model,
+          ...usage,
+          model: "gpt-6.1-sol",
           output_tokens: 3_000,
-          providerName: "opencode-go",
+          providerName: "codex",
           source: "provider",
         }),
       ).toEqual({
@@ -456,22 +466,6 @@ describe("token usage storage", () => {
         total_cost_nanos: totalCostNanos,
       })
     }
-
-    expect(
-      resolveTokenUsageCost({
-        cache_creation_input_tokens: 2_000,
-        cache_read_input_tokens: 2_000,
-        input_tokens: 269_000,
-        model: "gpt-5.6-luna",
-        output_tokens: 3_000,
-        providerName: "opencode-go",
-        source: "provider",
-      }),
-    ).toEqual({
-      currency: "USD",
-      source: "builtin",
-      total_cost_nanos: 57_040_000,
-    })
   })
 
   test("prices DashScope Qwen3.8 Max with explicit cache prices", () => {
@@ -509,23 +503,6 @@ describe("token usage storage", () => {
     })
   })
 
-  test("prices DashScope DeepSeek V4 Flash 0731 with peak and off-peak prices", () => {
-    const usage = buildPricedUsage("deepseek-v4-flash-0731", "dashscope")
-
-    expect(resolveTokenUsageCost({ ...usage, at: dashscopePeakTime })).toEqual({
-      currency: "CNY",
-      source: "builtin",
-      total_cost_nanos: 30_600_000,
-    })
-    expect(
-      resolveTokenUsageCost({ ...usage, at: dashscopeOffPeakTime }),
-    ).toEqual({
-      currency: "CNY",
-      source: "builtin",
-      total_cost_nanos: 15_300_000,
-    })
-  })
-
   test("prices DeepSeek models with peak and off-peak prices in CNY", () => {
     const expectedCosts = [
       {
@@ -560,27 +537,18 @@ describe("token usage storage", () => {
     }
   })
 
-  test("prices OpenCode Go DeepSeek models with peak and off-peak prices in USD", () => {
+  test("prices OpenCode Go models from the models.dev catalog in USD", () => {
+    installModelsDevCatalog(modelsDevCatalogFixture)
     const expectedCosts = [
       {
         model: "deepseek-v4.1-flash",
         offPeakCostNanos: 1_956_000,
-        peakCostNanos: 3_912_000,
-      },
-      {
-        model: "deepseek-v4-flash",
-        offPeakCostNanos: 1_956_000,
-        peakCostNanos: 3_912_000,
-      },
-      {
-        model: "deepseek-v4-flash-vision-exp",
-        offPeakCostNanos: 1_956_000,
-        peakCostNanos: 3_912_000,
+        peakCostNanos: 1_956_000,
       },
       {
         model: "deepseek-v4-pro",
         offPeakCostNanos: 6_644_000,
-        peakCostNanos: 13_288_000,
+        peakCostNanos: 6_644_000,
       },
     ]
 

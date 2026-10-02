@@ -38,6 +38,17 @@ const STRIPPED_RESPONSE_HEADERS = [
   "upgrade",
 ] as const
 
+export function resolveProviderEndpointUrl(
+  providerConfig: ResolvedProviderConfig,
+  endpoint: string,
+): string {
+  const apiBaseUrl =
+    providerConfig.modelsDevProviderId ?
+      providerConfig.baseUrl.replace(/\/(?:chat\/completions|responses)$/u, "")
+    : `${providerConfig.baseUrl}/v1`
+  return `${apiBaseUrl}/${endpoint}`
+}
+
 export function buildProviderUpstreamHeaders(
   providerConfig: ResolvedProviderConfig,
   requestHeaders: Headers,
@@ -79,6 +90,10 @@ export function buildProviderUpstreamHeaders(
     return headers
   }
 
+  if (providerConfig.modelsDevProviderId) {
+    headers["anthropic-version"] = "2023-06-01"
+  }
+
   for (const headerName of ANTHROPIC_FORWARDABLE_HEADERS) {
     const headerValue = requestHeaders.get(headerName)
     if (headerValue) {
@@ -98,8 +113,10 @@ function buildProviderUrl(
   endpoint: "chat/completions" | "messages" | "responses",
   model: string,
 ): string {
-  const prefix = providerConfig.transport === "llmapi" ? "" : "/v1"
-  const url = `${providerConfig.baseUrl}${prefix}/${endpoint}`
+  const url =
+    providerConfig.transport === "llmapi" ?
+      `${providerConfig.baseUrl}/${endpoint}`
+    : resolveProviderEndpointUrl(providerConfig, endpoint)
   const apiVersion = providerConfig.models?.[model]?.apiVersion?.trim()
   return apiVersion ?
       `${url}?api-version=${encodeURIComponent(apiVersion)}`
@@ -197,17 +214,23 @@ export function createProviderProxyResponse(
   upstreamResponse: Response,
   body?: ReadableStream<Uint8Array> | null,
 ): Response {
-  const headers = new Headers(upstreamResponse.headers)
+  return new Response(body ?? upstreamResponse.body, {
+    headers: createProviderProxyResponseHeaders(upstreamResponse.headers),
+    status: upstreamResponse.status,
+    statusText: upstreamResponse.statusText,
+  })
+}
+
+export function createProviderProxyResponseHeaders(
+  upstreamHeaders: Headers,
+): Headers {
+  const headers = new Headers(upstreamHeaders)
 
   for (const headerName of STRIPPED_RESPONSE_HEADERS) {
     headers.delete(headerName)
   }
 
-  return new Response(body ?? upstreamResponse.body, {
-    headers,
-    status: upstreamResponse.status,
-    statusText: upstreamResponse.statusText,
-  })
+  return headers
 }
 
 export async function forwardProviderMessages(
@@ -315,7 +338,7 @@ export async function forwardProviderModels(
   providerConfig: ResolvedProviderConfig,
   requestHeaders: Headers,
 ): Promise<Response> {
-  return await fetch(`${providerConfig.baseUrl}/v1/models`, {
+  return await fetch(resolveProviderEndpointUrl(providerConfig, "models"), {
     method: "GET",
     headers: buildProviderUpstreamHeaders(providerConfig, requestHeaders),
     signal: AbortSignal.timeout(PROVIDER_MODELS_TIMEOUT_MS),
@@ -334,7 +357,9 @@ function resolveProviderRequestUrl(
   requestUrl: string,
   path: string,
 ): string {
-  const upstreamUrl = new URL(`${providerConfig.baseUrl}${path}`)
+  const upstreamUrl = new URL(
+    resolveProviderEndpointUrl(providerConfig, path.replace(/^\/v1\//u, "")),
+  )
   upstreamUrl.search = new URL(requestUrl, "http://localhost").search
   return upstreamUrl.toString()
 }

@@ -3,6 +3,7 @@ import type {
   AuthResult,
   CodexAccountSummary,
   DeviceCodeInfo,
+  ModelsDevProviderOption,
   ProviderAuthInput,
   ProviderAuthTypeInput,
   ProviderType,
@@ -103,6 +104,13 @@ export default function AuthPage({ onBack, onSuccess }: AuthPageProps) {
   const [providerApiKey, setProviderApiKey] = useState('')
   const [providerAuthType, setProviderAuthType] =
     useState<ProviderAuthTypeInput>('__default__')
+  const [modelsDevProviders, setModelsDevProviders] = useState<
+    Array<ModelsDevProviderOption>
+  >([])
+  const [selectedModelsDevProviderId, setSelectedModelsDevProviderId] =
+    useState('')
+  const [modelsDevLoading, setModelsDevLoading] = useState(false)
+  const [modelsDevError, setModelsDevError] = useState(false)
   const [codexAccounts, setCodexAccounts] = useState<
     Array<CodexAccountSummary>
   >([])
@@ -188,12 +196,22 @@ export default function AuthPage({ onBack, onSuccess }: AuthPageProps) {
     setProviderChoice(provider)
     setProviderApiKey('')
     setProviderAuthType('__default__')
+    setSelectedModelsDevProviderId('')
+    setModelsDevError(false)
     setError('')
 
     if (provider === 'custom') {
       setProviderName('')
       setProviderType('openai-compatible')
       setProviderBaseUrl('')
+      if (modelsDevProviders.length === 0) {
+        setModelsDevLoading(true)
+        void window.electronAPI
+          .getModelsDevProviders()
+          .then(setModelsDevProviders)
+          .catch(() => setModelsDevError(true))
+          .finally(() => setModelsDevLoading(false))
+      }
     } else {
       const defaults = QUICK_PROVIDER_DEFAULTS[provider]
       setProviderName(provider)
@@ -202,6 +220,22 @@ export default function AuthPage({ onBack, onSuccess }: AuthPageProps) {
     }
 
     setView('provider-input')
+  }
+
+  const handleModelsDevProviderSelect = (providerId: string) => {
+    setSelectedModelsDevProviderId(providerId)
+    if (!providerId) {
+      setProviderName('')
+      setProviderType('openai-compatible')
+      setProviderBaseUrl('')
+      return
+    }
+    const provider = modelsDevProviders.find((item) => item.id === providerId)
+    if (!provider) return
+    setProviderName(provider.id)
+    setProviderType(provider.type)
+    setProviderBaseUrl(provider.api)
+    setProviderAuthType('__default__')
   }
 
   const handleSaveProvider = async () => {
@@ -218,6 +252,7 @@ export default function AuthPage({ onBack, onSuccess }: AuthPageProps) {
             baseUrl: providerBaseUrl.trim(),
             apiKey: providerApiKey.trim(),
             authType: providerAuthType,
+            modelsDevProviderId: selectedModelsDevProviderId || undefined,
           }
         : {
             provider: providerChoice,
@@ -705,6 +740,38 @@ export default function AuthPage({ onBack, onSuccess }: AuthPageProps) {
                   : 'flex flex-col gap-3'
                 }
               >
+                {isCustomProvider && (
+                  <label className="flex flex-col gap-1.5 sm:col-span-2">
+                    <span className="text-[13px] text-ink-faint">
+                      {t('auth.modelsDevProvider')}
+                    </span>
+                    <select
+                      value={selectedModelsDevProviderId}
+                      onChange={(e) =>
+                        handleModelsDevProviderSelect(e.target.value)
+                      }
+                      disabled={modelsDevLoading}
+                      className="w-full px-3 py-2.5 border border-line rounded-lg bg-surface text-ink text-[13px] focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:opacity-50"
+                    >
+                      <option value="">
+                        {modelsDevLoading ?
+                          t('auth.modelsDevLoading')
+                        : t('auth.modelsDevManual')}
+                      </option>
+                      {modelsDevProviders.map((provider) => (
+                        <option key={provider.id} value={provider.id}>
+                          {provider.name} ({provider.id}) · {provider.type}
+                        </option>
+                      ))}
+                    </select>
+                    {modelsDevError && (
+                      <span className="text-[12px] text-amber-600 dark:text-amber-400">
+                        {t('auth.modelsDevUnavailable')}
+                      </span>
+                    )}
+                  </label>
+                )}
+
                 {isCustomProvider && (
                   <label className="flex flex-col gap-1.5">
                     <span className="text-[13px] text-ink-faint">

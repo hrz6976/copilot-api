@@ -98,7 +98,7 @@ export async function handleProviderChatCompletionsForProvider(
   )
   const effectiveType = effectiveProviderConfig.type
   const modelConfig = getEffectiveProviderModelConfig(
-    providerConfig,
+    effectiveProviderConfig,
     payload.model,
   )
   applyModelDefaults(payload, modelConfig)

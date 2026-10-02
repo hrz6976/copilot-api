@@ -22,13 +22,10 @@ import type {
 
 import {
   type ModelConfig,
-  type ProviderAuthType,
   type ResolvedProviderConfig,
-  type ProviderType,
   getClaudeAutoModel,
   getEffectiveProviderModelConfig,
-  resolveEffectiveProviderType,
-  resolveProviderAuthType,
+  resolveProviderConfigForModel,
 } from "~/lib/config"
 import { builtinProviderModelRegistry } from "~/lib/builtin-provider-models"
 import { logCodexRateLimitsEvent } from "~/lib/codex-rate-limit"
@@ -37,6 +34,7 @@ import {
   applyDashScopePreserveThinkingDefault,
   applyOpenAICompatibleContextCache,
   isDashScopeAliyunProvider,
+  normalizeDashScopeAssistantTextContent,
 } from "~/lib/dashscope"
 import { HTTPError, getStreamErrorMessage } from "~/lib/error"
 import { createHandlerLogger, debugJson, debugLazy } from "~/lib/logger"
@@ -110,26 +108,6 @@ export const providerMessagesHandlerDependencies = {
   resolveProviderConfig,
 }
 
-const resolveOverrideProviderAuthType = (
-  providerConfig: ResolvedProviderConfig,
-  effectiveType: ProviderType,
-): ProviderAuthType => {
-  // azure-entra and oauth2 are explicit credentials, never protocol defaults:
-  // recomputing the auth type for the override would drop them and send the
-  // token with the wrong scheme (e.g. an Entra token as x-api-key).
-  if (
-    providerConfig.authType === "azure-entra"
-    || providerConfig.authType === "oauth2"
-  ) {
-    return providerConfig.authType
-  }
-  return resolveProviderAuthType(
-    providerConfig.name,
-    providerConfig.configuredAuthType,
-    effectiveType,
-  )
-}
-
 export async function handleProviderMessages(
   c: Context<Env, "/:provider">,
 ): Promise<Response> {
@@ -159,9 +137,9 @@ export async function handleProviderMessagesForProvider(
   },
 ): Promise<Response> {
   const { payload, provider, usageEndpoint } = options
-  const providerConfig =
+  const configuredProvider =
     await providerMessagesHandlerDependencies.resolveProviderConfig(provider)
-  if (!providerConfig) {
+  if (!configuredProvider) {
     return c.json(
       {
         error: {
@@ -174,14 +152,15 @@ export async function handleProviderMessagesForProvider(
   }
 
   try {
+    const providerConfig = resolveProviderConfigForModel(
+      configuredProvider,
+      payload.model,
+    )
     const modelConfig = getEffectiveProviderModelConfig(
       providerConfig,
       payload.model,
     )
-    const effectiveType = resolveEffectiveProviderType(
-      providerConfig,
-      payload.model,
-    )
+    const effectiveType = providerConfig.type
     debugJson(logger, "provider.messages.request", { payload, provider })
 
     normalizeSystemMessages(payload)
@@ -233,16 +212,7 @@ export async function handleProviderMessagesForProvider(
       provider,
     })
     const upstreamResponse = await forwardProviderMessages(
-      effectiveType === providerConfig.type ?
-        providerConfig
-      : {
-          ...providerConfig,
-          type: effectiveType,
-          authType: resolveOverrideProviderAuthType(
-            providerConfig,
-            effectiveType,
-          ),
-        },
+      providerConfig,
       payload,
       c.req.raw.headers,
       { clientSignal: c.req.raw.signal },
@@ -686,6 +656,8 @@ const createOpenAICompatiblePayload = (
     extraBody: modelConfig?.extraBody,
   })
 
+  applyMiMoThinking(openAIPayload, payload)
+
   applyDashScopePreserveThinkingDefault(
     openAIPayload as unknown as Record<string, unknown>,
     providerConfig,
@@ -698,6 +670,10 @@ const createOpenAICompatiblePayload = (
     openAIPayload.parallel_tool_calls = true
   }
 
+  if (isDashScopeProvider) {
+    normalizeDashScopeAssistantTextContent(openAIPayload.messages)
+  }
+
   const contextCacheEnabled = modelConfig?.contextCache ?? isDashScopeProvider
   if (contextCacheEnabled) {
     applyOpenAICompatibleContextCache(openAIPayload)
@@ -706,6 +682,31 @@ const createOpenAICompatiblePayload = (
   applyGptModelTokenLimitParam(openAIPayload)
 
   return openAIPayload
+}
+
+const applyMiMoThinking = (
+  payload: ChatCompletionsPayload,
+  source: AnthropicMessagesPayload,
+): void => {
+  if (!/(?:^|\/)mimo(?:[-_.]|$)/i.test(payload.model)) {
+    return
+  }
+
+  const sourceThinkingType = source.thinking?.type
+  const shouldEnableThinking = Boolean(
+    payload.reasoning_effort || sourceThinkingType,
+  )
+  delete payload.reasoning_effort
+
+  if (sourceThinkingType === "disabled") {
+    payload.thinking = { type: "disabled" }
+    delete payload.thinking_budget
+    return
+  }
+
+  if (shouldEnableThinking) {
+    payload.thinking = { type: "enabled" }
+  }
 }
 
 const normalizeOpenAICompatibleReasoningContent = (
