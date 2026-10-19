@@ -14,6 +14,7 @@ import {
   getCopilotModelRecords,
   getModelsById,
   getProviderModelRecords,
+  getRecordField,
   getStringField,
   resolveModelDiscoveryProviderConfig,
 } from "~/routes/models/model-discovery"
@@ -133,6 +134,12 @@ async function getProviderCodexCandidates(
     const candidates: Array<SyntheticCodexModelCandidate> = []
     for (const modelId of modelIds) {
       if (!isProviderModelVisible(provider, modelId, providerConfig)) continue
+      if (
+        getRecordField(modelsById.get(modelId), "capabilities")?.type
+        === "decision"
+      ) {
+        continue
+      }
       const effectiveType = resolveEffectiveProviderType(
         providerConfig,
         modelId,

@@ -31,6 +31,9 @@ cloudgpt_available_models = Literal[
     "gpt-5.6-terra-20260709",  # ChatCompletions, Responses
     "gpt-5.6-luna-20260709",  # ChatCompletions, Responses
     "gpt-6-astra-20260903",  # ChatCompletions, Responses
+    "gpt-6.1-sol-20260929",  # Responses preferred; ChatCompletions without reasoning + tools
+    "gpt-6-sol-20260922",  # Responses preferred; ChatCompletions without reasoning + tools
+    "gpt-6-luna-20260922",  # Responses preferred; ChatCompletions without reasoning + tools
     # Chat models
     "gpt-chat-latest-20260505",  # ChatCompletions, Responses
     "gpt-chat-latest-20260528",  # ChatCompletions, Responses
@@ -76,6 +79,7 @@ cloudgpt_available_models = Literal[
     "DeepSeek-V4-Flash", # ChatCompletions
     "DeepSeek-V4-Pro", # ChatCompletions
     "DeepSeek-V4-Flash-0731", # ChatCompletions
+    "DeepSeek-V4.1-Flash", # ChatCompletions, image input
     "DeepSeek-V4-Pro-0813", # ChatCompletions
     ##########################################################################
     # Moonshot Models
@@ -89,6 +93,11 @@ cloudgpt_available_models = Literal[
     ##########################################################################
     "Llama-3.3-70B-Instruct", # ChatCompletions
     "Llama-4-Maverick-17B-128E-Instruct-FP8", # ChatCompletions
+    ##########################################################################
+    # Microsoft Decision Models (systemone scoring API, not ChatCompletions)
+    ##########################################################################
+    "Microsoft-Decision-1", # Decision scoring
+    "OCTO-PI", # Shared evaluation-only decision scoring endpoint
     ##########################################################################
     # Image Generation Models
     ##########################################################################

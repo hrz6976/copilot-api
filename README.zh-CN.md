@@ -57,7 +57,7 @@ npx @hrz6976/copilot-api@latest auth login
 也可以使用 Bun >= 1.4.0 运行，可获得更好的性能：
 
 ```sh
-bunx --bun @jeffreycao/copilot-api start
+bunx --bun @hrz6976/copilot-api start
 ```
 
 `--bun` 用于选择 Bun 运行时，日常启动省略 `@latest` 以复用缓存。全局安装与升级方式见 [Bun 使用说明](docs/guides/zh-CN/getting-started.md#using-with-bun)。
@@ -76,6 +76,33 @@ curl http://localhost:4141/v1/models
 > token usage 存储需要 Node.js >= 22.13.0 或 Bun。详见[通过 npx 使用](docs/guides/zh-CN/getting-started.md#using-with-npx)。
 
 接下来可按你的客户端选择指南：[与 Claude Code 一起使用](docs/guides/zh-CN/claude-code.md#using-with-claude-code)、[与 OpenCode 一起使用](docs/guides/zh-CN/opencode.md#using-with-opencode)、[与 Codex 一起使用](docs/guides/zh-CN/codex.md#using-with-codex)、[与 DeepSeek Harness 一起使用](docs/guides/zh-CN/dsh.md#using-with-deepseek-harness)，或通过 [Docker](docs/guides/zh-CN/docker.md#using-with-docker) 运行。
+
+## CloudGPT Decision API
+
+先按 [Provider 配置指南](docs/guides/en/fork-providers.md)配置并启用 CloudGPT。网关使用已配置的 Azure CLI 身份获取 CloudGPT token；客户端使用网关自己的 API Key。
+
+将 TypeSafe SystemOne 格式的决策请求发送到 CloudGPT 专用入口：
+
+```sh
+curl http://localhost:4141/cloudgpt/v1/systemone \
+  -H "Authorization: Bearer YOUR_GATEWAY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Microsoft-Decision-1",
+    "state": "I was charged twice for my subscription.",
+    "questions": {
+      "department": {
+        "type": "choice",
+        "instructions": "Which support team should handle this?",
+        "criteria": {"billing": null, "technical": null}
+      }
+    }
+  }'
+```
+
+也可以调用通用入口 `/v1/systemone`，将模型改为 `"model": "cloudgpt/Microsoft-Decision-1"`。两种方式都会转发到 CloudGPT 的 `https://cloudgpt-openai.azure-api.net/decision-api/v1/systemone`，上游收到的模型名均不带 `cloudgpt/` 前缀。其余请求字段、上游 JSON 响应和状态码保持原样；返回结果包含 `answers.department.choice`、置信度、概率和 token 用量。
+
+共享评估部署使用 `OCTO-PI`（通用入口使用 `cloudgpt/OCTO-PI`）。这两个模型使用决策接口协议。TypeSafe Python SDK 调用示例见 [CloudGPT 指南](docs/guides/en/fork-providers.md)。
 
 <a id="compatibility"></a>
 
@@ -107,7 +134,7 @@ curl http://localhost:4141/v1/models
   <img src="docs/screenshots/desktop-token-usage.png" alt="Copilot API 桌面应用 Token 用量页" width="49%" />
 </p>
 
-Windows x64（`.exe`）、macOS Apple Silicon（`.dmg`）和 Linux x64（`.AppImage`）安装包发布在 [GitHub Releases](https://github.com/caozhiyuan/copilot-api/releases)。完整配置与高级设置见 [Electron 桌面应用](docs/guides/zh-CN/desktop.md#electron-desktop-app)。
+本 fork 的桌面安装包需要本地构建。完整配置与高级设置见 [Electron 桌面应用](docs/guides/zh-CN/desktop.md#electron-desktop-app)。
 
 ## 文档导航
 

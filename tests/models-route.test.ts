@@ -2623,8 +2623,39 @@ describe("model routes", () => {
     expect(modelIds).toContain("cloudgpt/gpt-4.1-mini-20250414")
     expect(modelIds).toContain("cloudgpt/gpt-5.4-pro-20260305")
     expect(modelIds).toContain("cloudgpt/DeepSeek-V4-Pro")
+    expect(modelIds).toContain("cloudgpt/Microsoft-Decision-1")
+    expect(modelIds).toContain("cloudgpt/OCTO-PI")
     expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  test.each(["claude-cli/2.1", "opencode/2.0", "codex/1.0"])(
+    "excludes CloudGPT decision models from %s discovery",
+    async (userAgent) => {
+      enabledProviders = ["cloudgpt"]
+      providerConfigs = {
+        cloudgpt: createProviderConfig(
+          "cloudgpt",
+          "https://cloudgpt-openai.azure-api.net/openai",
+        ),
+      }
+      const response = await createApp().request("/v1/models", {
+        headers: { "user-agent": userAgent },
+      })
+      expect(response.status).toBe(200)
+      const body = (await response.json()) as {
+        data?: Array<{ id: string }>
+        models?: Array<{ slug: string }>
+      }
+      const ids =
+        body.models?.map((model) => model.slug)
+        ?? body.data?.map((model) => model.id)
+        ?? []
+      expect(ids.length).toBeGreaterThan(0)
+      expect(ids.some((id) => id.includes("Microsoft-Decision-1"))).toBe(false)
+      expect(ids.some((id) => id.includes("OCTO-PI"))).toBe(false)
+      expect(fetchMock).not.toHaveBeenCalled()
+    },
+  )
 
   test("returns CloudGPT catalog from provider-scoped models route", async () => {
     providerConfigs = {

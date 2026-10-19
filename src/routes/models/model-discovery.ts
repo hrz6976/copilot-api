@@ -342,10 +342,13 @@ function selectAgentProviderModels(
 export async function getAgentModels(
   requestHeaders: Headers,
 ): Promise<Array<ClientModel>> {
-  return getAggregatedModels(requestHeaders, {
+  const models = await getAggregatedModels(requestHeaders, {
     selectCopilotModels: selectAgentCopilotModels,
     selectProviderModels: selectAgentProviderModels,
   })
+  return models.filter(
+    (model) => getRecordField(model, "capabilities")?.type !== "decision",
+  )
 }
 
 export function createModelListResponse(

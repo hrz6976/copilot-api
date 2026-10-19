@@ -21,6 +21,7 @@ import { providerMessageRoutes } from "./routes/provider/messages/route"
 import { providerModelRoutes } from "./routes/provider/models/route"
 import { providerResponsesRoutes } from "./routes/provider/responses/route"
 import { responsesRoutes } from "./routes/responses/route"
+import { systemOneRoutes } from "./routes/systemone/route"
 import { tokenUsageRoute } from "./routes/token-usage/route"
 import { usageRoute } from "./routes/usage/route"
 export interface CreateServerOptions {
@@ -84,6 +85,7 @@ export function createServer(options: CreateServerOptions = {}): Hono {
   server.route("/usage", usageRoute)
   server.route("/token-usage", tokenUsageRoute)
   server.route("/responses", responsesRoutes)
+  server.route("/systemone", systemOneRoutes)
   server.route("/alpha/search", alphaSearchRoutes)
   server.route("/images", imageRoutes)
 
@@ -92,6 +94,7 @@ export function createServer(options: CreateServerOptions = {}): Hono {
   server.route("/v1/models", modelRoutes)
   server.route("/v1/embeddings", embeddingRoutes)
   server.route("/v1/responses", responsesRoutes)
+  server.route("/v1/systemone", systemOneRoutes)
   server.route("/v1/alpha/search", alphaSearchRoutes)
   server.route("/v1/images", imageRoutes)
 
@@ -102,11 +105,13 @@ export function createServer(options: CreateServerOptions = {}): Hono {
   server.route("/:provider/v1/messages", providerMessageRoutes)
   server.route("/:provider/v1/models", providerModelRoutes)
   server.route("/:provider/v1/responses", providerResponsesRoutes)
+  server.route("/:provider/v1/systemone", systemOneRoutes)
   server.route("/:provider/v1/alpha/search", providerAlphaSearchRoutes)
   server.route("/:provider/v1/images", providerImageRoutes)
 
   server.route("/:provider/models", providerModelRoutes)
   server.route("/:provider/responses", providerResponsesRoutes)
+  server.route("/:provider/systemone", systemOneRoutes)
   server.route("/:provider/alpha/search", providerAlphaSearchRoutes)
   server.route("/:provider/images", providerImageRoutes)
 

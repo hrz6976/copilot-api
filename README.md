@@ -53,7 +53,7 @@ npx @hrz6976/copilot-api@latest auth login
 Alternatively, run with Bun >= 1.4.0, which can offer better performance:
 
 ```sh
-bunx --bun @jeffreycao/copilot-api start
+bunx --bun @hrz6976/copilot-api start
 ```
 
 Use `--bun` to select the Bun runtime and omit `@latest` for routine starts to reuse the cache. See [Bun setup](docs/guides/en/getting-started.md#using-with-bun) for global installation and upgrades.
@@ -72,6 +72,33 @@ curl http://localhost:4141/v1/models
 > Token usage storage requires Node.js >= 22.13.0 or Bun. See [Using with npx](docs/guides/en/getting-started.md#using-with-npx) for details.
 
 From here, jump to the guide for your client: [Claude Code](docs/guides/en/claude-code.md#using-with-claude-code), [OpenCode](docs/guides/en/opencode.md#using-with-opencode), [Codex](docs/guides/en/codex.md#using-with-codex), [DeepSeek Harness](docs/guides/en/dsh.md#using-with-deepseek-harness), or run it with [Docker](docs/guides/en/docker.md#using-with-docker).
+
+## CloudGPT Decision API
+
+Configure CloudGPT first using the [provider setup guide](docs/guides/en/fork-providers.md). The gateway uses the configured Azure CLI identity to obtain CloudGPT tokens; clients use the gateway API key.
+
+Send a TypeSafe SystemOne decision request to the provider-scoped endpoint:
+
+```sh
+curl http://localhost:4141/cloudgpt/v1/systemone \
+  -H "Authorization: Bearer YOUR_GATEWAY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Microsoft-Decision-1",
+    "state": "I was charged twice for my subscription.",
+    "questions": {
+      "department": {
+        "type": "choice",
+        "instructions": "Which support team should handle this?",
+        "criteria": {"billing": null, "technical": null}
+      }
+    }
+  }'
+```
+
+Alternatively, call `/v1/systemone` with `"model": "cloudgpt/Microsoft-Decision-1"`. Both routes forward to CloudGPT's `https://cloudgpt-openai.azure-api.net/decision-api/v1/systemone`, using the bare deployment name upstream. Other request fields and the upstream JSON response and status are preserved. The result includes `answers.department.choice`, confidence, probabilities, and token usage.
+
+Use `OCTO-PI` (or `cloudgpt/OCTO-PI` on the shared route) for the shared evaluation-only deployment. These models use the decision contract rather than Chat Completions. For a TypeSafe Python SDK example, see the [CloudGPT guide](docs/guides/en/fork-providers.md).
 
 ## Compatibility
 
