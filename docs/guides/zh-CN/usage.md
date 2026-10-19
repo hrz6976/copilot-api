@@ -8,7 +8,7 @@
 
 服务启动后，控制台会输出一个 Copilot 使用量看板 URL。这个看板是一个用于监控 API 用量的 Web 界面。
 
-1. 启动服务。例如使用 npx：
+1. 启动服务。例如使用 Bun（推荐）：
    ```sh
    npx @hrz6976/copilot-api@latest start
    ```

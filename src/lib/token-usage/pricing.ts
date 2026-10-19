@@ -1,4 +1,9 @@
 import { builtinProviderModelRegistry } from "../builtin-provider-models"
+import { getModelsDevModelPricing } from "../models-dev-cache"
+import {
+  resolveProviderModelsDevId,
+  usesModelsDevModelCatalog,
+} from "../provider-model-catalog"
 import type { TokenUsagePeakWindow } from "./peak-windows"
 import {
   normalizeToken,
@@ -6,7 +11,6 @@ import {
   type UsageTokens,
 } from "./store"
 
-export { dashscopePeakWindows, deepseekPeakWindows } from "./peak-windows"
 export type { TokenUsagePeakWindow } from "./peak-windows"
 
 export interface TokenUsagePricingTier {
@@ -33,6 +37,7 @@ export interface CalculatedTokenUsageCost {
 }
 
 export interface TokenUsageCostInput extends UsageTokens {
+  serviceTier?: string | null
   // Timestamp used to pick peak or off-peak prices; defaults to the current
   // time when omitted.
   at?: Date | null
@@ -46,6 +51,7 @@ export interface TokenUsageCostInput extends UsageTokens {
 interface ResolvedPricing {
   pricing: TokenUsagePricingConfig
   source: string
+  currency?: string
 }
 
 const COST_NANOS_PER_UNIT = 1_000_000_000
@@ -98,7 +104,9 @@ export function resolveTokenUsageCost(
     getInputTokenTotal(input),
     resolvePricingTime(input.at),
   )
-  const currency = resolveProviderCurrency(providerName, input.pricingCurrency)
+  const currency =
+    resolvedPricing.currency
+    ?? resolveProviderCurrency(providerName, input.pricingCurrency)
   if (!currency) {
     return null
   }
@@ -108,11 +116,14 @@ export function resolveTokenUsageCost(
   const cacheReadPrice = resolveCacheReadPrice(pricing, input)
   const cacheCreationPrice = resolveCacheCreationPrice(pricing)
 
-  const totalCostNanos =
+  const baseCostNanos =
     costNanosForTokens(input.input_tokens, inputPrice)
     + costNanosForTokens(input.output_tokens, outputPrice)
     + costNanosForTokens(input.cache_read_input_tokens, cacheReadPrice)
     + costNanosForTokens(input.cache_creation_input_tokens, cacheCreationPrice)
+  const totalCostNanos = Math.round(
+    baseCostNanos * resolveCodexServiceTierMultiplier(input, providerName),
+  )
 
   if (totalCostNanos <= 0) {
     return null
@@ -122,6 +133,27 @@ export function resolveTokenUsageCost(
     currency,
     source: resolvedPricing.source,
     total_cost_nanos: totalCostNanos,
+  }
+}
+
+function resolveCodexServiceTierMultiplier(
+  input: TokenUsageCostInput,
+  providerName: string,
+): number {
+  if (providerName.toLowerCase() !== "codex") {
+    return 1
+  }
+
+  // Price-estimate multipliers, applied after selecting the context rates.
+  // https://developers.openai.com/api/docs/pricing
+  switch (input.serviceTier?.trim().toLowerCase()) {
+    case "priority":
+    case "fast":
+      return 2
+    case "ultrafast":
+      return 6
+    default:
+      return 1
   }
 }
 
@@ -183,9 +215,24 @@ function resolveProviderPricing(
     }
   }
 
+  if (usesModelsDevModelCatalog(providerName)) {
+    const pricing = getModelsDevModelPricing(
+      resolveProviderModelsDevId(providerName),
+      model,
+    )
+    if (pricing) return { pricing, source: "models.dev", currency: "USD" }
+  }
+
+  const pricingModel =
+    (
+      providerName.toLowerCase() === "codex"
+      && model.trim().toLowerCase() === "gpt-5.6"
+    ) ?
+      "gpt-5.6-sol"
+    : model
   const builtinPricing = builtinProviderModelRegistry.getModelConfig(
     providerName,
-    model,
+    pricingModel,
   )?.pricing
   if (!builtinPricing) {
     return null
@@ -292,7 +339,7 @@ function normalizePrice(value: number | null | undefined): number | null {
     : null
 }
 
-function resolveProviderCurrency(
+export function resolveProviderCurrency(
   providerName: string,
   configuredCurrency: string | null | undefined,
 ): string | null {

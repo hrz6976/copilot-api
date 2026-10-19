@@ -9,6 +9,7 @@ import {
 import { createHandlerLogger, debugJson, debugJsonTail } from "~/lib/logger"
 import { findEndpointModel } from "~/lib/models"
 import { resolveConfiguredProviderModelAlias } from "~/lib/provider-resolver"
+import { requestContext } from "~/lib/request-context"
 import { writeSSEIfConnected } from "~/lib/sse"
 import { isCodexUserAgent } from "~/routes/models/codex-models"
 import {
@@ -49,6 +50,7 @@ import {
   filterReasoningForTransport,
   getResponsesTransportForModel,
   getResponsesRequestOptions,
+  normalizeGuardianAgentMessages,
   normalizeInputImageDetails,
   normalizeResponsesReasoningEffort,
   sanitizeOversizedInputImages,
@@ -98,17 +100,22 @@ export const handleResponses = async (c: Context) => {
 
   debugJson(logger, "Responses request payload:", payload)
 
-  const subagentMarker = getCodexResponsesSubagentMarker(c)
+  const store = requestContext.getStore()
+  const rootSessionId = store?.rootSessionId
+  const sessionAffinity = store?.sessionAffinity
+
+  const subagentMarker = getCodexResponsesSubagentMarker(c, {
+    rootSessionId,
+    sessionAffinity,
+  })
   if (subagentMarker) {
     debugJson(logger, "Detected Codex subagent headers:", subagentMarker)
   }
 
-  const incomingSessionId = getIncomingResponsesSessionId(c)
-  const sessionId = incomingSessionId ? getUUID(incomingSessionId) : undefined
-  const threadId = c.req.header("thread-id")
+  const sessionId = rootSessionId ? getUUID(rootSessionId) : undefined
   const requestId =
-    threadId ?
-      getUUID(threadId + "_")
+    sessionAffinity ?
+      getUUID(sessionAffinity + "_")
     : generateRequestIdFromPayload({ messages: payload.input }, sessionId)
   logger.debug("Generated request ID:", requestId)
 
@@ -167,6 +174,13 @@ export const handleResponses = async (c: Context) => {
     fallbackSessionId,
     model: payload.model,
   })
+
+  const normalizedAgentMessageCount = normalizeGuardianAgentMessages(payload)
+  if (normalizedAgentMessageCount > 0) {
+    logger.debug(
+      `Translated ${normalizedAgentMessageCount} Guardian agent message(s) to user messages before forwarding to Copilot Responses`,
+    )
+  }
 
   const sanitizedUnsupportedFieldCount = sanitizeUnsupportedInputFields(payload)
   if (sanitizedUnsupportedFieldCount > 0) {
@@ -422,11 +436,6 @@ const fillEmptyNamespaceDescriptions = (tools: unknown): void => {
   }
 }
 
-const getIncomingResponsesSessionId = (c: Context): string | undefined =>
-  getTrimmedHeader(c, "session-id")
-  ?? getTrimmedHeader(c, "x-root-session-id")
-  ?? getTrimmedHeader(c, "x-session-id")
-
 const codexSubagentHeaderValues = new Set([
   "collab_spawn",
   "compact",
@@ -434,25 +443,24 @@ const codexSubagentHeaderValues = new Set([
   "review",
 ])
 
-const getCodexResponsesSubagentMarker = (c: Context): SubagentMarker | null => {
+const getCodexResponsesSubagentMarker = (
+  c: Context,
+  session: { rootSessionId?: string; sessionAffinity?: string },
+): SubagentMarker | null => {
   const agentType = getTrimmedHeader(c, "x-openai-subagent")
   if (!agentType || !codexSubagentHeaderValues.has(agentType)) {
     return null
   }
 
-  const threadId = getTrimmedHeader(c, "thread-id")
-  const rootSessionId = getIncomingResponsesSessionId(c)
-  const parentThreadId = getTrimmedHeader(c, "x-codex-parent-thread-id")
-  if (!threadId && !rootSessionId && !parentThreadId) {
+  const { rootSessionId, sessionAffinity } = session
+  if (!sessionAffinity) {
     return null
   }
 
-  const agentId = threadId ?? parentThreadId ?? rootSessionId ?? agentType
-
   return {
-    agent_id: agentId,
+    agent_id: sessionAffinity,
     agent_type: agentType,
-    session_id: threadId ?? rootSessionId ?? agentId,
+    session_id: rootSessionId ?? sessionAffinity,
   }
 }
 

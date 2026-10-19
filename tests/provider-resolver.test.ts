@@ -103,6 +103,40 @@ afterEach(() => {
 })
 
 describe("provider resolver", () => {
+  test("provider enablement controls all routing independently of Codex catalog visibility", () => {
+    const tempDir = createTempDir()
+    writeConfigFile(tempDir, {
+      providers: {
+        dashscope: {
+          type: "openai-compatible",
+          baseUrl: "https://provider.example/v1",
+          apiKey: "provider-key",
+        },
+      },
+    })
+    const output = runScript(
+      tempDir,
+      `
+      const { getProviderConfig, listEnabledProviders } = await import("./src/lib/provider-config");
+      const { saveProviderManagementConfig, isProviderAgentModelVisible } = await import("./src/lib/provider-management");
+      const { getConfig } = await import("./src/lib/config-store");
+      const before = getProviderConfig("dashscope") !== null;
+      saveProviderManagementConfig({ providers: { dashscope: { enabled: false } } });
+      const disabled = getProviderConfig("dashscope") === null && !listEnabledProviders().includes("dashscope");
+      saveProviderManagementConfig({ providers: { dashscope: { enabled: true, agentsModels: [] } } });
+      console.log(JSON.stringify({ before, disabled, reenabled: getProviderConfig("dashscope") !== null,
+        credentialsPreserved: getProviderConfig("dashscope")?.apiKey === "provider-key",
+        codexVisible: isProviderAgentModelVisible(getConfig().providers?.dashscope, "model") }));
+    `,
+    )
+    expect(JSON.parse(output)).toEqual({
+      before: true,
+      disabled: true,
+      reenabled: true,
+      credentialsPreserved: true,
+      codexVisible: false,
+    })
+  })
   test("resolves codex from config.providers to the ChatGPT Codex backend", () => {
     const tempDir = createTempDir()
     writeConfigFile(tempDir, {
@@ -286,15 +320,6 @@ describe("provider resolver", () => {
 
   test("resolves cloudgpt azure-cli auth to a fresh bearer token", () => {
     const tempDir = createTempDir()
-    const binDir = path.join(tempDir, "bin")
-    fs.mkdirSync(binDir)
-    fs.writeFileSync(
-      path.join(binDir, "az"),
-      `#!/usr/bin/env sh
-printf '%s\\n' '{"accessToken":"cloudgpt-access-token","expires_on":1783398547,"tenant":"72f988bf-86f1-41af-91ab-2d7cd011db47","tokenType":"Bearer"}'
-`,
-      { encoding: "utf8", mode: 0o755 },
-    )
     writeConfigFile(tempDir, {
       providers: {
         cloudgpt: {
@@ -308,8 +333,13 @@ printf '%s\\n' '{"accessToken":"cloudgpt-access-token","expires_on":1783398547,"
 
     const output = runScript(
       tempDir,
-      'const { resolveProviderConfig } = await import("./src/lib/provider-resolver"); console.log(JSON.stringify(await resolveProviderConfig("cloudgpt")));',
-      { PATH: `${binDir}:${process.env.PATH ?? ""}` },
+      `
+      const { spyOn } = await import("bun:test");
+      const cloudgpt = await import("./src/lib/cloudgpt-token");
+      spyOn(cloudgpt, "getCloudGptAzureCliAccessToken").mockResolvedValue("cloudgpt-access-token");
+      const { resolveProviderConfig } = await import("./src/lib/provider-resolver");
+      console.log(JSON.stringify(await resolveProviderConfig("cloudgpt")));
+      `,
     )
 
     expect(JSON.parse(output)).toMatchObject({

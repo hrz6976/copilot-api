@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 
 import {
   resolveEffectiveProviderConfig,
+  normalizeProviderBaseUrl,
   resolveProviderAuthType,
   type ResolvedProviderConfig,
 } from "~/lib/config"
@@ -89,6 +90,25 @@ describe("buildProviderUpstreamHeaders", () => {
 })
 
 describe("resolveProviderAuthType", () => {
+  test("supports OAuth bearer auth for xAI", () => {
+    expect(resolveProviderAuthType("xai", "oauth2", "openai-responses")).toBe(
+      "oauth2",
+    )
+    const headers = buildProviderUpstreamHeaders(
+      createProviderConfig({
+        name: "xai",
+        type: "openai-responses",
+        authType: "oauth2",
+        apiKey: "xai-access-token",
+      }),
+      new Headers({
+        authorization: "Bearer client-token",
+        "x-api-key": "client-key",
+      }),
+    )
+    expect(headers.authorization).toBe("Bearer xai-access-token")
+    expect(headers["x-api-key"]).toBeUndefined()
+  })
   test("falls back to OpenAI-compatible default for invalid authType", () => {
     expect(
       resolveProviderAuthType("dash", "invalid-auth-type", "openai-compatible"),
@@ -256,6 +276,41 @@ describe("resolveEffectiveProviderConfig cloudgpt catalog routing", () => {
 })
 
 describe("provider endpoint URL", () => {
+  test.each([
+    ["https://opencode.ai/zen/go", "https://opencode.ai/inference/go"],
+    [" https://opencode.ai/zen/go/v1/ ", "https://opencode.ai/inference/go/v1"],
+    ["https://opencode.ai/zen", "https://opencode.ai/zen"],
+    ["https://opencode.ai/zen/gopher", "https://opencode.ai/zen/gopher"],
+    ["https://proxy.example/zen/go", "https://proxy.example/zen/go"],
+  ])("normalizes the legacy Go base URL %s", (baseUrl, expected) => {
+    expect(normalizeProviderBaseUrl(baseUrl)).toBe(expected)
+  })
+
+  test.each([
+    { type: "anthropic", endpoint: "messages" },
+    { type: "openai-compatible", endpoint: "chat/completions" },
+    { type: "openai-responses", endpoint: "responses" },
+    { type: "google", endpoint: "models/gemini-test:generateContent" },
+    { type: "google", endpoint: "models/gemini-test:streamGenerateContent" },
+  ] as const)(
+    "migrates Go $type requests without duplicating v1",
+    ({ type, endpoint }) => {
+      for (const baseUrl of [
+        "https://opencode.ai/zen/go",
+        "https://opencode.ai/zen/go/v1/",
+        "https://opencode.ai/inference/go",
+        "https://opencode.ai/inference/go/v1",
+      ]) {
+        expect(
+          resolveProviderEndpointUrl(
+            createProviderConfig({ name: "opencode-go", type, baseUrl }),
+            endpoint,
+          ),
+        ).toBe(`https://opencode.ai/inference/go/v1/${endpoint}`)
+      }
+    },
+  )
+
   test("uses models.dev API paths directly for all three supported protocols", () => {
     const provider = createProviderConfig({
       baseUrl: "https://api.example.com/anthropic/v1",

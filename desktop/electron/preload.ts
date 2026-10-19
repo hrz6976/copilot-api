@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { AppUpdateStatus, XaiAuthInfo } from '../src/types/ipc'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getAuthStatus: () => ipcRenderer.invoke('auth:get-status'),
@@ -16,6 +17,37 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('auth:remove-codex-account', accountId),
   startCodexLogin: (input?: unknown) =>
     ipcRenderer.invoke('auth:start-codex-login', input),
+  cancelCodexLogin: () => ipcRenderer.invoke('auth:cancel-codex-login'),
+  onCodexAuthUrl: (callback: (url: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, url: string) =>
+      callback(url)
+    ipcRenderer.on('auth:codex-url', handler)
+    return () => ipcRenderer.off('auth:codex-url', handler)
+  },
+  onCodexLoginSaving: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('auth:codex-saving', handler)
+    return () => ipcRenderer.off('auth:codex-saving', handler)
+  },
+  getXaiAccounts: () => ipcRenderer.invoke('auth:get-xai-accounts'),
+  switchXaiAccount: (accountId: string) =>
+    ipcRenderer.invoke('auth:switch-xai-account', accountId),
+  removeXaiAccount: (accountId: string) =>
+    ipcRenderer.invoke('auth:remove-xai-account', accountId),
+  startXaiLogin: (input?: unknown) =>
+    ipcRenderer.invoke('auth:start-xai-login', input),
+  cancelXaiLogin: () => ipcRenderer.invoke('auth:cancel-xai-login'),
+  onXaiAuth: (callback: (info: XaiAuthInfo) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, info: XaiAuthInfo) =>
+      callback(info)
+    ipcRenderer.on('auth:xai-code', handler)
+    return () => ipcRenderer.off('auth:xai-code', handler)
+  },
+  onXaiLoginSaving: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('auth:xai-saving', handler)
+    return () => ipcRenderer.off('auth:xai-saving', handler)
+  },
   logout: () => ipcRenderer.invoke('auth:logout'),
 
   startServer: (port: number, authMode?: string, host?: string) =>
@@ -24,9 +56,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getServerStatus: () => ipcRenderer.invoke('server:get-status'),
 
   getSettings: () => ipcRenderer.invoke('settings:get'),
+  getBunRuntime: () => ipcRenderer.invoke('settings:get-bun-runtime'),
+  getAppUpdateStatus: () => ipcRenderer.invoke('update:get-status'),
+  checkAppUpdate: () => ipcRenderer.invoke('update:check'),
+  installAppUpdate: () => ipcRenderer.invoke('update:install'),
+  onAppUpdateStatus: (callback: (status: AppUpdateStatus) => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      status: AppUpdateStatus,
+    ) => callback(status)
+    ipcRenderer.on('update:status', handler)
+    return () => ipcRenderer.off('update:status', handler)
+  },
   saveSettings: (settings: unknown) =>
     ipcRenderer.invoke('settings:save', settings),
   getModelMappingsConfig: () => ipcRenderer.invoke('config:get-model-mappings'),
+  getAppConfig: () => ipcRenderer.invoke('config:get-document'),
+  saveAppConfig: (input: unknown) =>
+    ipcRenderer.invoke('config:save-document', input),
+  applyAppConfig: (revision: string) =>
+    ipcRenderer.invoke('config:apply-document', revision),
+  getProviderManagementConfig: () =>
+    ipcRenderer.invoke('config:get-provider-management'),
+  getProviderModelOptions: () =>
+    ipcRenderer.invoke('config:get-provider-model-options'),
+  saveProviderManagementConfig: (input: unknown) =>
+    ipcRenderer.invoke('config:save-provider-management', input),
   saveModelMappings: (modelMappings: Record<string, string>) =>
     ipcRenderer.invoke('config:save-model-mappings', modelMappings),
 
@@ -41,6 +96,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   fetchTokenUsageEvents: (period: string, page: number, pageSize: number) =>
     ipcRenderer.invoke(
       'server:fetch-token-usage-events',
+      period,
+      page,
+      pageSize,
+    ),
+  fetchTokenUsageSessions: (period: string, page: number, pageSize: number) =>
+    ipcRenderer.invoke(
+      'server:fetch-token-usage-sessions',
       period,
       page,
       pageSize,

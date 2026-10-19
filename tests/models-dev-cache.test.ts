@@ -8,9 +8,15 @@ import { builtinProviderModelRegistry } from "~/lib/builtin-provider-models"
 import { resolveTokenUsageCost } from "~/lib/token-usage/pricing"
 import {
   getModelsDevModelApi,
+  getModelsDevModel,
+  getModelsDevModelConfig,
+  getModelsDevModelMaxOutputTokens,
   getModelsDevModelPricing,
   getModelsDevModelProviderType,
+  getModelsDevProviderApi,
   getModelsDevProviderOptions,
+  getModelsDevProviderModelIds,
+  loadCachedModelsDevCatalog,
   getOpencodeGoModelIds,
   getOpencodeGoModelProviderType,
   getOpencodeGoModelRecords,
@@ -20,7 +26,10 @@ import {
   stopModelsDevRefreshLoop,
 } from "~/lib/models-dev-cache"
 
-import { modelsDevCatalogFixture } from "./fixtures/models-dev-catalog"
+import {
+  modelsDevCatalogFixture,
+  modelsDevReleaseModelsFixture,
+} from "./fixtures/models-dev-catalog"
 
 let tempDir: string | undefined
 
@@ -46,6 +55,127 @@ afterEach(async () => {
   if (tempDir) await fs.rm(tempDir, { recursive: true, force: true })
   tempDir = undefined
 })
+
+test("filters older releases consistently across models.dev lists, protocols, limits and pricing", () => {
+  const models = {
+    ...modelsDevReleaseModelsFixture,
+    "before-cutoff": {
+      ...modelsDevReleaseModelsFixture["before-cutoff"],
+      limit: { output: 32_000 },
+      cost: { input: 1, output: 2 },
+      provider: { api: "https://old.example/v1" },
+    },
+  }
+  const catalog = {
+    ...modelsDevCatalogFixture,
+    "opencode-go": { npm: "@ai-sdk/openai-compatible", models },
+    example: {
+      npm: "@ai-sdk/openai-compatible",
+      api: "https://example.com/v1",
+      models,
+    },
+  }
+  const original = structuredClone(catalog)
+  installModelsDevCatalog(catalog)
+  const visibleIds = [
+    "after-cutoff",
+    "invalid-date",
+    "on-cutoff",
+    "unknown-date",
+  ]
+  expect(getOpencodeGoModelIds()).toEqual(visibleIds)
+  expect(getModelsDevProviderModelIds("example")).toEqual(visibleIds)
+  expect(getModelsDevModelConfig("example", "before-cutoff")).toBeUndefined()
+  expect(getModelsDevModelPricing("example", "before-cutoff")).toBeUndefined()
+  expect(
+    getModelsDevModelMaxOutputTokens("example", "before-cutoff"),
+  ).toBeUndefined()
+  expect(
+    getModelsDevModelProviderType("example", "before-cutoff"),
+  ).toBeUndefined()
+  expect(getModelsDevModelApi("example", "before-cutoff")).toBeUndefined()
+  expect(getModelsDevModelProviderType("example", "on-cutoff")).toBe(
+    "openai-compatible",
+  )
+  expect(catalog).toEqual(original)
+})
+
+test("exposes raw models.dev metadata even for providers excluded from the provider picker", () => {
+  installModelsDevCatalog({
+    ...modelsDevCatalogFixture,
+    "github-copilot": {
+      models: {
+        invalid: null,
+        vision: {
+          id: "vision",
+          cost: { input: 1, output: 2 },
+          modalities: { input: ["text", "image"], output: ["text"] },
+        },
+      },
+    },
+  })
+  expect(getModelsDevModel("opencode-go", "hy3")?.cost).toEqual(
+    modelsDevCatalogFixture["opencode-go"].models.hy3.cost,
+  )
+  expect(getModelsDevModel("github-copilot", "vision")?.cost).toEqual({
+    input: 1,
+    output: 2,
+  })
+  expect(getModelsDevModel("github-copilot", "invalid")).toBeUndefined()
+  expect(getModelsDevModel("missing", "vision")).toBeUndefined()
+  expect(getModelsDevModel("opencode-go", "missing")).toBeUndefined()
+})
+
+test.each([
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    npm: "@ai-sdk/anthropic",
+    api: "https://api.anthropic.com/v1",
+    type: "anthropic",
+  },
+  {
+    id: "openai",
+    name: "OpenAI",
+    npm: "@ai-sdk/openai",
+    api: "https://api.openai.com/v1",
+    type: "openai-responses",
+  },
+  {
+    id: "google",
+    name: "Google",
+    npm: "@ai-sdk/google",
+    api: "https://generativelanguage.googleapis.com/v1beta",
+    type: "google",
+  },
+] as const)(
+  "uses the official provider API for $id when the catalog omits it",
+  (expected) => {
+    const { id, name, npm, api, type } = expected
+    const provider = { name, npm, models: { example: { id: "example" } } }
+    for (const missingApi of [undefined, null]) {
+      installModelsDevCatalog({
+        ...modelsDevCatalogFixture,
+        [id]: { ...provider, api: missingApi },
+      })
+      expect(getModelsDevProviderOptions()).toContainEqual({
+        id,
+        name,
+        api,
+        type,
+      })
+      expect(getModelsDevProviderApi(id)).toBe(api)
+      expect(getModelsDevProviderModelIds(id)).toEqual(["example"])
+      expect(getModelsDevModelProviderType(id, "example")).toBe(type)
+    }
+
+    installModelsDevCatalog({
+      ...modelsDevCatalogFixture,
+      [id]: { ...provider, api: " https://catalog.example/v2/// " },
+    })
+    expect(getModelsDevProviderApi(id)).toBe("https://catalog.example/v2")
+  },
+)
 
 test("lists usable Chat, Responses, and Anthropic providers without the built-in choices", async () => {
   installModelsDevCatalog({
@@ -74,6 +204,13 @@ test("lists usable Chat, Responses, and Anthropic providers without the built-in
           id: "claude",
           provider: { npm: "@ai-sdk/anthropic" },
         },
+        gemini: {
+          id: "gemini",
+          provider: {
+            npm: "@ai-sdk/google",
+            api: "https://google.example/v1beta",
+          },
+        },
       },
     },
     "responses-provider": {
@@ -100,12 +237,15 @@ test("lists usable Chat, Responses, and Anthropic providers without the built-in
       api: "https://copilot.example/v1",
     },
     "missing-api": { npm: "@ai-sdk/openai-compatible" },
+    "missing-anthropic-api": { npm: "@ai-sdk/anthropic" },
+    "missing-openai-api": { npm: "@ai-sdk/openai" },
+    "missing-google-api": { npm: "@ai-sdk/google" },
     templated: {
       npm: "@ai-sdk/openai-compatible",
       api: "https://${ACCOUNT}.example/v1",
     },
     unsupported: {
-      npm: "@ai-sdk/google",
+      npm: "@ai-sdk/unsupported",
       api: "https://google.example/v1",
     },
   })
@@ -113,6 +253,11 @@ test("lists usable Chat, Responses, and Anthropic providers without the built-in
   expect(await loadModelsDevProviderOptions()).toEqual(
     getModelsDevProviderOptions(),
   )
+  await loadCachedModelsDevCatalog()
+  expect(getModelsDevProviderModelIds("responses-provider")).toEqual([
+    "completion",
+  ])
+  expect(getModelsDevProviderModelIds("unknown-provider")).toEqual([])
   expect(getModelsDevProviderOptions()).toEqual([
     {
       id: "anthropic-provider",
@@ -139,6 +284,12 @@ test("lists usable Chat, Responses, and Anthropic providers without the built-in
   expect(getModelsDevModelProviderType("chat-provider", "claude")).toBe(
     "anthropic",
   )
+  expect(getModelsDevModelProviderType("chat-provider", "gemini")).toBe(
+    "google",
+  )
+  expect(getModelsDevModelApi("chat-provider", "gemini")).toBe(
+    "https://google.example/v1beta",
+  )
   expect(
     getModelsDevModelProviderType("responses-provider", "completion"),
   ).toBe("openai-compatible")
@@ -151,6 +302,58 @@ test("lists usable Chat, Responses, and Anthropic providers without the built-in
     cachedInput: 0.01,
   })
 })
+
+test("resolves output limits for all cached providers and ignores unknown or deprecated models", () => {
+  installModelsDevCatalog({
+    ...modelsDevCatalogFixture,
+    openrouter: {
+      models: {
+        "org/model": { limit: { output: 131_072 } },
+        deprecated: { status: "deprecated", limit: { output: 65_536 } },
+        malformed: null,
+      },
+    },
+    "custom-provider": { models: { model: { limit: { output: 8_192 } } } },
+    "invalid-provider": null,
+    "missing-models": {},
+  })
+
+  expect(getModelsDevModelMaxOutputTokens("openrouter", "org/model")).toBe(
+    131_072,
+  )
+  expect(getModelsDevModelMaxOutputTokens("custom-provider", "model")).toBe(
+    8_192,
+  )
+  expect(getModelsDevModelMaxOutputTokens("opencode-go", "gpt-6-luna")).toBe(
+    128_000,
+  )
+  expect(
+    getModelsDevModelMaxOutputTokens("openrouter", "deprecated"),
+  ).toBeUndefined()
+  expect(
+    getModelsDevModelMaxOutputTokens("openrouter", "malformed"),
+  ).toBeUndefined()
+  expect(
+    getModelsDevModelMaxOutputTokens("openrouter", "unknown"),
+  ).toBeUndefined()
+  expect(
+    getModelsDevModelMaxOutputTokens("unknown", "org/model"),
+  ).toBeUndefined()
+})
+
+test.each([undefined, null, 0, -1, 1.5, NaN, Infinity, "65536"])(
+  "ignores invalid cached output limits %j",
+  (output) => {
+    installModelsDevCatalog({
+      ...modelsDevCatalogFixture,
+      "custom-provider": { models: { model: { limit: { output } } } },
+    })
+
+    expect(
+      getModelsDevModelMaxOutputTokens("custom-provider", "model"),
+    ).toBeUndefined()
+  },
+)
 
 test("persists the full models.dev response and filters deprecated models in memory", async () => {
   const cachePath = await getCachePath()
@@ -231,7 +434,11 @@ test("persists the full models.dev response and filters deprecated models in mem
 
 test("serves disk models before the background network refresh finishes", async () => {
   const cachePath = await getCachePath()
-  await fs.writeFile(cachePath, JSON.stringify(modelsDevCatalogFixture))
+  const document = {
+    ...modelsDevCatalogFixture,
+    "custom-provider": { models: { model: { limit: { output: 131_072 } } } },
+  }
+  await fs.writeFile(cachePath, JSON.stringify(document))
   let finishFetch: ((response: Response) => void) | undefined
   const response = new Promise<Response>((resolve) => {
     finishFetch = resolve
@@ -243,6 +450,9 @@ test("serves disk models before the background network refresh finishes", async 
   })
 
   expect(getOpencodeGoModelIds()).toContain("gpt-6-luna")
+  expect(getModelsDevModelMaxOutputTokens("custom-provider", "model")).toBe(
+    131_072,
+  )
   expect(finishFetch).toBeDefined()
   finishFetch?.(Response.json(modelsDevCatalogFixture))
   await waitFor(

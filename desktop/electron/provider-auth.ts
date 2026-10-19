@@ -1,3 +1,4 @@
+import { isGitHubCopilotEnabled } from '../../src/lib/github-copilot-provider'
 import {
   getRawProviderConfig,
   isSupportedProviderType,
@@ -13,6 +14,8 @@ import {
   QUICK_PROVIDER_CONFIGS,
   type QuickProviderConfig,
 } from '../../src/lib/quick-providers'
+import { loginXai, type XaiAuthInfo } from '../../src/lib/oauth/xai'
+import { persistXaiCredentials } from '../../src/lib/xai-token'
 import {
   getCodexAccounts,
   persistCodexCredentials,
@@ -28,10 +31,15 @@ import type {
 } from '../src/types/ipc'
 import { getGitHubUser, readToken } from './auth'
 
-const CUSTOM_PROVIDER_AUTH_TYPES = ['x-api-key', 'authorization'] as const
+const CUSTOM_PROVIDER_AUTH_TYPES = [
+  'x-api-key',
+  'x-goog-api-key',
+  'authorization',
+] as const
 
 interface AuthStatusDependencies {
   listEnabledProviders?: () => string[]
+  isGitHubCopilotEnabled?: () => boolean
   readToken?: () => Promise<string | null>
   verifyGitHubToken?: (token: string) => Promise<void>
 }
@@ -45,7 +53,9 @@ interface ProviderConfigDependencies {
 export interface CodexDesktopLoginOptions {
   alias?: string
   callbackUrlOrCode?: string
-  openUrl: (url: string) => void | Promise<void>
+  onAuthUrl?: (url: string) => void
+  onSaving?: () => void
+  signal?: AbortSignal
 }
 
 interface CodexDesktopLoginDependencies {
@@ -78,7 +88,11 @@ function assertCustomProviderName(providerName: string): void {
     )
   }
 
-  if (providerName === 'copilot' || providerName === 'codex') {
+  if (
+    providerName === 'copilot'
+    || providerName === 'github-copilot'
+    || providerName === 'codex'
+  ) {
     throw new Error(
       `Provider name '${providerName}' is reserved for a builtin provider`,
     )
@@ -144,6 +158,9 @@ function buildProviderConfig(
     ...(options.authType ? { authType: options.authType } : {}),
     pricingCurrency:
       options.pricingCurrency ?? existingProviderConfig.pricingCurrency,
+    ...(existingProviderConfig.agentsModels !== undefined ?
+      { agentsModels: existingProviderConfig.agentsModels }
+    : {}),
     ...(existingProviderConfig.models ?
       { models: existingProviderConfig.models }
     : {}),
@@ -183,7 +200,10 @@ export async function getDesktopAuthStatus(
     dependencies.listEnabledProviders ?? getEnabledDesktopProviders
 
   const token = await readSavedToken()
-  if (token) {
+  if (
+    token
+    && (dependencies.isGitHubCopilotEnabled ?? isGitHubCopilotEnabled)()
+  ) {
     try {
       await verifyGitHubToken(token)
       return {
@@ -282,6 +302,7 @@ export async function loginCodexForDesktop(
   options: CodexDesktopLoginOptions,
   dependencies: CodexDesktopLoginDependencies = {},
 ): Promise<AuthResult> {
+  options.signal?.throwIfAborted()
   const login = dependencies.loginCodex ?? loginCodex
   const persistCredentials =
     dependencies.persistCodexCredentials ?? persistCodexCredentials
@@ -289,14 +310,17 @@ export async function loginCodexForDesktop(
     dependencies.getEnabledProviders ?? getEnabledDesktopProviders
 
   const credentials = await login({
+    signal: options.signal,
     onAuth(info) {
-      void options.openUrl(info.url)
+      options.onAuthUrl?.(info.url)
     },
     onPrompt() {
       return Promise.resolve(options.callbackUrlOrCode?.trim() ?? '')
     },
   })
 
+  options.signal?.throwIfAborted()
+  options.onSaving?.()
   await persistCredentials(credentials, {
     activateAccount: true,
     alias: options.alias?.trim() || undefined,
@@ -317,6 +341,41 @@ export async function getDesktopCodexAccounts(
   return await listAccounts()
 }
 
+export interface XaiDesktopLoginOptions {
+  alias?: string
+  onAuth?: (info: XaiAuthInfo) => void
+  onSaving?: () => void
+  signal?: AbortSignal
+}
+
+export async function loginXaiForDesktop(
+  options: XaiDesktopLoginOptions,
+  dependencies: {
+    loginXai?: typeof loginXai
+    persistXaiCredentials?: typeof persistXaiCredentials
+    getEnabledProviders?: () => string[]
+  } = {},
+): Promise<AuthResult> {
+  options.signal?.throwIfAborted()
+  const credentials = await (dependencies.loginXai ?? loginXai)({
+    onAuth: (info) => options.onAuth?.(info),
+    signal: options.signal,
+  })
+  options.signal?.throwIfAborted()
+  options.onSaving?.()
+  await (dependencies.persistXaiCredentials ?? persistXaiCredentials)(
+    credentials,
+    { alias: options.alias?.trim() || undefined },
+  )
+  return {
+    success: true,
+    mode: 'provider',
+    providers: (
+      dependencies.getEnabledProviders ?? getEnabledDesktopProviders
+    )(),
+  }
+}
+
 export async function selectCodexAccountForDesktop(
   accountId: string,
   dependencies: CodexDesktopAccountDependencies = {},
@@ -325,12 +384,10 @@ export async function selectCodexAccountForDesktop(
   const getEnabledProviders =
     dependencies.getEnabledProviders ?? getEnabledDesktopProviders
 
-  await selectAccount(accountId)
-  return {
-    success: true,
-    mode: 'provider',
-    providers: getEnabledProviders(),
-  }
+  return await updateDesktopAccount(
+    () => selectAccount(accountId),
+    getEnabledProviders,
+  )
 }
 
 export async function removeCodexAccountForDesktop(
@@ -341,7 +398,17 @@ export async function removeCodexAccountForDesktop(
   const getEnabledProviders =
     dependencies.getEnabledProviders ?? getEnabledDesktopProviders
 
-  await removeAccount(accountId)
+  return await updateDesktopAccount(
+    () => removeAccount(accountId),
+    getEnabledProviders,
+  )
+}
+
+export async function updateDesktopAccount(
+  operation: () => Promise<CodexAccountSummary>,
+  getEnabledProviders = getEnabledDesktopProviders,
+): Promise<AuthResult> {
+  await operation()
   return {
     success: true,
     mode: 'provider',
