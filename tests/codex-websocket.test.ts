@@ -159,6 +159,7 @@ const fetchMock = mock((_url: string | URL | Request, _init?: RequestInit) =>
   Promise.resolve(new Response("unexpected http", { status: 500 })),
 )
 const actualUndici = await import("undici")
+const originalWebSocket = globalThis.WebSocket
 
 await mock.module("undici", () => ({
   ...actualUndici,
@@ -169,7 +170,7 @@ await mock.module("undici", () => ({
 }))
 
 const { state } = await import("~/lib/state")
-const { forwardCodexResponses } = await import(
+const { codexResponsesDependencies, forwardCodexResponses } = await import(
   "~/services/codex/create-responses"
 )
 const { providerResponsesRoutes } = await import(
@@ -183,6 +184,8 @@ const originalState = {
   codexAccessToken: state.codexAccessToken,
   codexAccountId: state.codexAccountId,
 }
+const originalIsResponsesApiWebSocketEnabled =
+  codexResponsesDependencies.isResponsesApiWebSocketEnabled
 
 const createResponsesResult = (
   model: string,
@@ -221,10 +224,14 @@ const mockFetchJsonResponse = (body: unknown): void => {
 }
 
 beforeEach(() => {
+  globalThis.WebSocket = MockWebSocket as unknown as typeof globalThis.WebSocket
   MockWebSocket.autoComplete = true
   MockWebSocket.instances = []
   MockWebSocket.responseError = null
   MockWebSocket.responseMetadataHeaders = null
+  // Other test files mock ~/lib/config with websockets disabled, and Bun keeps
+  // module mocks for the whole run, so pin the configured transport here.
+  codexResponsesDependencies.isResponsesApiWebSocketEnabled = () => true
   state.codexAccessToken = "codex-token"
   state.codexAccountId = "codex-account"
   fetchMock.mockClear()
@@ -233,10 +240,13 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  globalThis.WebSocket = originalWebSocket
   for (const websocket of MockWebSocket.instances) {
     websocket.close()
   }
 
+  codexResponsesDependencies.isResponsesApiWebSocketEnabled =
+    originalIsResponsesApiWebSocketEnabled
   state.codexAccessToken = originalState.codexAccessToken
   state.codexAccountId = originalState.codexAccountId
   ;(globalThis as unknown as { fetch: typeof fetch }).fetch = originalFetch

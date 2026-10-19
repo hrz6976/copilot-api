@@ -1,6 +1,6 @@
 import type { Model, ModelsResponse } from "~/lib/types/models"
 
-type CloudGptModelKind = "chat" | "embeddings" | "image" | "video"
+type CloudGptModelKind = "chat" | "decision" | "embeddings" | "image" | "video"
 type CloudGptInputModality = "image" | "pdf" | "text" | "video"
 
 interface CloudGptModelDefinition {
@@ -29,6 +29,7 @@ const RESPONSES_ENDPOINT = "/v1/responses"
 const EMBEDDINGS_ENDPOINT = "/v1/embeddings"
 const IMAGE_GENERATIONS_ENDPOINT = "/v1/images/generations"
 const IMAGE_EDITS_ENDPOINT = "/v1/images/edits"
+const SYSTEMONE_ENDPOINT = "/v1/systemone"
 
 const CHAT_AND_RESPONSES = [CHAT_COMPLETIONS_ENDPOINT, RESPONSES_ENDPOINT]
 const RESPONSES_ONLY = [RESPONSES_ENDPOINT]
@@ -72,6 +73,33 @@ const CODEX_REASONING_EFFORTS = ["low", "medium", "high"]
 const O_SERIES_REASONING_EFFORTS = ["low", "medium", "high"]
 
 export const CLOUDGPT_MODEL_CATALOG = [
+  // Decision scoring returns typed decisions, not chat completions. Foundry
+  // does not publish token limits for these deployments; zero means unspecified.
+  {
+    id: "Microsoft-Decision-1",
+    name: "Microsoft Decision 1",
+    vendor: "microsoft",
+    family: "microsoft-decision",
+    kind: "decision",
+    contextWindow: 0,
+    maxOutputTokens: 0,
+    input: TEXT_INPUT,
+    endpoints: [SYSTEMONE_ENDPOINT],
+    toolCalls: false,
+  },
+  {
+    id: "OCTO-PI",
+    name: "Octo PI (evaluation only)",
+    vendor: "microsoft",
+    family: "microsoft-decision",
+    kind: "decision",
+    contextWindow: 0,
+    maxOutputTokens: 0,
+    input: TEXT_INPUT,
+    endpoints: [SYSTEMONE_ENDPOINT],
+    toolCalls: false,
+    preview: true,
+  },
   {
     id: "gpt-4o-20240513",
     name: "GPT-4o (2024-05-13)",

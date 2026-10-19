@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
 
 import {
   CLOUDGPT_MODEL_CATALOG,
@@ -10,6 +11,8 @@ describe("CloudGPT model catalog", () => {
   test("contains every active model from cloudgpt_aoai.py", () => {
     const modelIds = CLOUDGPT_MODEL_CATALOG.map((model) => model.id)
     const expectedModelIds = [
+      "Microsoft-Decision-1",
+      "OCTO-PI",
       "gpt-4.1-mini-20250414",
       "gpt-5.4-pro-20260305",
       "gpt-5.6-sol-20260709",
@@ -42,12 +45,64 @@ describe("CloudGPT model catalog", () => {
       "MAI-Image-2.6-Flash",
     ]
 
-    expect(CLOUDGPT_MODEL_CATALOG).toHaveLength(80)
+    expect(CLOUDGPT_MODEL_CATALOG).toHaveLength(82)
     expect(new Set(modelIds).size).toBe(modelIds.length)
     for (const modelId of expectedModelIds) {
       expect(modelIds).toContain(modelId)
     }
   })
+
+  test("keeps the Python deployment list aligned with the gateway catalog", () => {
+    const source = readFileSync(
+      new URL("../cloudgpt_aoai.py", import.meta.url),
+      "utf8",
+    )
+    const deployments = source.match(
+      /cloudgpt_available_models = Literal\[([\s\S]*?)\n\]/u,
+    )?.[1]
+    expect(deployments).toBeDefined()
+    const pythonIds = [...(deployments ?? "").matchAll(/^\s*"([^"]+)"/gmu)].map(
+      (match) => match[1],
+    )
+    expect(pythonIds.sort()).toEqual(
+      // Retain this older gateway entry for existing clients; it is no longer
+      // advertised in the Python list of active deployments.
+      CLOUDGPT_MODEL_CATALOG.map((model) => model.id)
+        .filter((id) => id !== "gpt-oss-20b")
+        .sort(),
+    )
+  })
+
+  test.each(["Microsoft-Decision-1", "OCTO-PI"])(
+    "lists %s as a decision deployment without chat capabilities",
+    (modelId) => {
+      const model = getModels().data.find((entry) => entry.id === modelId)
+      expect(model).toMatchObject({
+        capabilities: {
+          family: "microsoft-decision",
+          limits: {
+            max_context_window_tokens: 0,
+            max_output_tokens: 0,
+          },
+          supports: {
+            parallel_tool_calls: false,
+            streaming: false,
+            tool_calls: false,
+            vision: false,
+          },
+          type: "decision",
+        },
+        model_picker_enabled: false,
+        preview: modelId === "OCTO-PI",
+        supported_endpoints: ["/v1/systemone"],
+        vendor: "microsoft",
+      })
+      expect(getCloudGptModelProviderType(modelId)).toBeUndefined()
+      expect(
+        getCloudGptModelProviderType(modelId, ["openai-responses"]),
+      ).toBeUndefined()
+    },
+  )
 
   test("returns normalized model capabilities and supported endpoints", () => {
     const models = getModels()

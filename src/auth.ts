@@ -22,6 +22,13 @@ import {
   loginLlmApi,
 } from "./lib/llmapi-token"
 import { loginCodex } from "./lib/oauth/codex"
+import { loginXai } from "./lib/oauth/xai"
+import {
+  persistXaiCredentials,
+  getXaiAccounts,
+  selectXaiAccount,
+  removeXaiAccount,
+} from "./lib/xai-token"
 import {
   loadModelsDevProviderOptions,
   type ModelsDevProviderOption,
@@ -55,11 +62,11 @@ const authArgs = {
   provider: {
     type: "string",
     description:
-      "Provider to log in with or configure (copilot, codex, opencode-go, kimi, deepseek, dashscope, cloudgpt, llmapi, openrouter, custom)",
+      "Provider to log in with or configure (copilot, codex, xai, opencode-go, kimi, deepseek, dashscope, cloudgpt, llmapi, openrouter, custom)",
   },
   alias: {
     type: "string",
-    description: "Optional alias for a Codex account",
+    description: "Optional alias for a Codex or xAI account",
   },
   verbose: {
     alias: "v",
@@ -74,7 +81,7 @@ const authArgs = {
   },
 } as const
 
-const BUILTIN_PROVIDER_NAMES = ["copilot", "codex"] as const
+const BUILTIN_PROVIDER_NAMES = ["copilot", "codex", "xai"] as const
 const QUICK_PROVIDER_NAMES = Object.keys(
   QUICK_PROVIDER_CONFIGS,
 ) as Array<QuickProviderName>
@@ -85,7 +92,11 @@ const AUTH_PROVIDER_NAMES = [
 ] as const
 const CUSTOM_PROVIDER_AUTH_TYPE_OPTION = "__default__"
 const QUICK_PROVIDER_DEFAULT_TYPE_OPTION = "__default__"
-const CUSTOM_PROVIDER_AUTH_TYPES = ["x-api-key", "authorization"] as const
+const CUSTOM_PROVIDER_AUTH_TYPES = [
+  "x-api-key",
+  "x-goog-api-key",
+  "authorization",
+] as const
 
 type BuiltinProviderName = (typeof BUILTIN_PROVIDER_NAMES)[number]
 type AuthProviderName = (typeof AUTH_PROVIDER_NAMES)[number]
@@ -94,6 +105,7 @@ type CustomProviderAuthType = (typeof CUSTOM_PROVIDER_AUTH_TYPES)[number]
 const BUILTIN_PROVIDER_LABELS: Record<BuiltinProviderName, string> = {
   copilot: "GitHub Copilot",
   codex: "OpenAI Codex",
+  xai: "xAI (SuperGrok Subscription)",
 }
 const AUTH_PROVIDER_LABELS: Record<AuthProviderName, string> = {
   ...BUILTIN_PROVIDER_LABELS,
@@ -176,7 +188,11 @@ function assertCustomProviderName(providerName: string): void {
     )
   }
 
-  if (providerName === "copilot" || providerName === "codex") {
+  if (
+    providerName === "copilot"
+    || providerName === "github-copilot"
+    || providerName === "codex"
+  ) {
     throw new Error(
       `Provider name '${providerName}' is reserved for a builtin provider`,
     )
@@ -395,6 +411,7 @@ async function promptQuickProviderType(
 function getDefaultProviderAuthType(
   providerType: ProviderType,
 ): ProviderAuthType {
+  if (providerType === "google") return "x-goog-api-key"
   return providerType === "anthropic" ? "x-api-key" : "authorization"
 }
 
@@ -474,6 +491,9 @@ function buildCustomProviderConfig(
     : {}),
     pricingCurrency:
       options.pricingCurrency ?? existingProviderConfig.pricingCurrency,
+    ...(existingProviderConfig.agentsModels !== undefined ?
+      { agentsModels: existingProviderConfig.agentsModels }
+    : {}),
     ...(existingProviderConfig.models ?
       { models: existingProviderConfig.models }
     : {}),
@@ -618,8 +638,8 @@ async function loginWithProvider(
   provider: AuthProviderName,
   alias?: string,
 ): Promise<void> {
-  if (alias !== undefined && provider !== "codex") {
-    throw new Error("--alias is only supported with the codex provider")
+  if (alias !== undefined && provider !== "codex" && provider !== "xai") {
+    throw new Error("--alias is only supported with the codex or xai provider")
   }
 
   if (provider === "copilot") {
@@ -630,6 +650,23 @@ async function loginWithProvider(
 
   if (provider === "codex") {
     await loginWithCodex(alias)
+    return
+  }
+
+  if (provider === "xai") {
+    const credentials = await loginXai({
+      onAuth(info) {
+        consola.info("Open the following URL to authenticate with xAI:")
+        consola.log(info.url)
+        consola.info(
+          `Open ${info.verificationUri} on any device and enter code: ${info.userCode}`,
+        )
+      },
+    })
+    await persistXaiCredentials(credentials, { alias })
+    consola.success(
+      `xAI provider config written to ${PATHS.CONFIG_PATH} and credentials written to ${PATHS.XAI_CREDENTIAL_PATH}`,
+    )
     return
   }
 
@@ -690,33 +727,33 @@ async function runStandaloneAuthLogin(options: RunAuthOptions): Promise<void> {
   }
 }
 
-const authCodexArgs = {
+const authAccountArgs = {
   list: {
     alias: "l",
     type: "boolean",
     default: false,
-    description: "List stored Codex accounts",
+    description: "List stored OAuth accounts",
   },
   remove: {
     alias: "r",
     type: "string",
     description:
-      "Remove a Codex account by alias or account id; the account in use cannot be removed",
+      "Remove an OAuth account by alias or account id; the account in use cannot be removed",
   },
   use: {
     alias: "u",
     type: "string",
-    description: "Select a Codex account by alias or account id",
+    description: "Select an OAuth account by alias or account id",
   },
 } as const
 
-interface RunAuthCodexOptions {
+interface RunAuthAccountsOptions {
   list?: boolean
   remove?: string
   use?: string
 }
 
-function formatCodexAccountName(
+function formatOAuthAccountName(
   account: Pick<CodexAccountSummary, "accountId" | "alias">,
 ): string {
   return account.alias ?
@@ -724,13 +761,33 @@ function formatCodexAccountName(
     : account.accountId
 }
 
-function formatCodexAccount(account: CodexAccountSummary): string {
-  return `${account.active ? "*" : "-"} ${formatCodexAccountName(account)}`
+function formatOAuthAccount(account: CodexAccountSummary): string {
+  return `${account.active ? "*" : "-"} ${formatOAuthAccountName(account)}`
 }
 
 export async function runAuthCodex(
-  options: RunAuthCodexOptions,
+  options: RunAuthAccountsOptions,
 ): Promise<void> {
+  return await runAuthAccounts("codex", options)
+}
+
+export async function runAuthAccounts(
+  provider: "codex" | "xai",
+  options: RunAuthAccountsOptions,
+): Promise<void> {
+  const label = provider === "codex" ? "Codex" : "xAI"
+  const accountsApi =
+    provider === "codex" ?
+      {
+        list: getCodexAccounts,
+        select: selectCodexAccount,
+        remove: removeCodexAccount,
+      }
+    : {
+        list: getXaiAccounts,
+        select: selectXaiAccount,
+        remove: removeXaiAccount,
+      }
   await ensurePaths()
 
   const operationCount = [
@@ -743,29 +800,33 @@ export async function runAuthCodex(
   }
 
   if (options.use !== undefined) {
-    const account = await selectCodexAccount(options.use)
-    consola.success(`Selected Codex account ${formatCodexAccountName(account)}`)
-    consola.info("Restart the server to use the selected Codex account.")
+    const account = await accountsApi.select(options.use)
+    consola.success(
+      `Selected ${label} account ${formatOAuthAccountName(account)}`,
+    )
+    consola.info(`Restart the server to use the selected ${label} account.`)
     return
   }
 
   if (options.remove !== undefined) {
-    const account = await removeCodexAccount(options.remove)
-    consola.success(`Removed Codex account ${formatCodexAccountName(account)}`)
-    return
-  }
-
-  const accounts = await getCodexAccounts()
-  if (accounts.length === 0) {
-    consola.info(
-      "No Codex accounts configured. Run `copilot-api auth login --provider codex` to add one.",
+    const account = await accountsApi.remove(options.remove)
+    consola.success(
+      `Removed ${label} account ${formatOAuthAccountName(account)}`,
     )
     return
   }
 
-  consola.info("Configured Codex accounts:")
+  const accounts = await accountsApi.list()
+  if (accounts.length === 0) {
+    consola.info(
+      `No ${label} accounts configured. Run \`copilot-api auth login --provider ${provider}\` to add one.`,
+    )
+    return
+  }
+
+  consola.info(`Configured ${label} accounts:`)
   for (const account of accounts) {
-    consola.info(formatCodexAccount(account))
+    consola.info(formatOAuthAccount(account))
   }
 }
 
@@ -919,7 +980,7 @@ const authCodex = defineCommand({
     name: "codex",
     description: "List, select, or remove stored Codex accounts",
   },
-  args: authCodexArgs,
+  args: authAccountArgs,
   run({ args }) {
     return runAuthCodex({
       list: args.list,
@@ -937,6 +998,17 @@ export const auth = defineCommand({
   args: authArgs,
   subCommands: {
     codex: authCodex,
+    xai: defineCommand({
+      meta: { name: "xai", description: "Manage stored xAI accounts" },
+      args: authAccountArgs,
+      run({ args }) {
+        return runAuthAccounts("xai", {
+          list: args.list,
+          remove: args.remove,
+          use: args.use,
+        })
+      },
+    }),
     login: authLogin,
     keys: authKeys,
   },

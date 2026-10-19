@@ -19,6 +19,7 @@ export {
   closeUsageStore,
   getTokenUsageDailySummary,
   getTokenUsageEventsPage,
+  getTokenUsageSessionsPage,
   getTokenUsageSummary,
   normalizeOptionalToken,
   normalizeToken,
@@ -34,6 +35,8 @@ export type {
   TokenUsageEventsPage,
   TokenUsageModelSummary,
   TokenUsagePeriod,
+  TokenUsageSessionsPage,
+  TokenUsageSessionSummary,
   TokenUsageSource,
   TokenUsageSummary,
   TokenUsageTotals,
@@ -41,6 +44,7 @@ export type {
 } from "./store"
 
 export interface TokenUsageEventInput extends UsageTokens {
+  serviceTier?: string | null
   endpoint: TokenUsageEndpoint
   fallbackSessionId?: string | null
   model: string
@@ -53,6 +57,7 @@ export interface TokenUsageEventInput extends UsageTokens {
 }
 
 interface TokenUsageRecorderOptions {
+  serviceTier?: string | null
   endpoint: TokenUsageEndpoint
   fallbackSessionId?: string | null
   model: string

@@ -14,6 +14,7 @@ interface ConfigFileShape {
       apiKey?: string
       authType?: string
       baseUrl?: string
+      agentsModels?: Array<string>
       enabled?: boolean
       models?: Record<string, unknown>
       modelsDevProviderId?: string
@@ -98,7 +99,7 @@ describe("auth login validation", () => {
         ", llmapi"
       : ""
     expect(output).toBe(
-      `Unknown provider 'unknown'. Expected one of: copilot, codex, opencode-go, kimi, deepseek, dashscope, cloudgpt${llmApiOption}, openrouter, custom`,
+      `Unknown provider 'unknown'. Expected one of: copilot, codex, xai, opencode-go, kimi, deepseek, dashscope, cloudgpt${llmApiOption}, openrouter, custom`,
     )
   })
 
@@ -471,7 +472,7 @@ describe("auth login validation", () => {
 
     expect(readConfigFile(tempDir).providers?.["opencode-go"]).toEqual({
       apiKey: "opencode-key",
-      baseUrl: "https://opencode.ai/zen/go",
+      baseUrl: "https://opencode.ai/inference/go",
       enabled: true,
       pricingCurrency: "USD",
       type: "openai-compatible",
@@ -532,13 +533,14 @@ describe("auth login validation", () => {
     })
   })
 
-  test("preserves quick provider model settings when reconfiguring credentials", () => {
+  test("preserves quick provider model settings and hidden Codex selection when reconfiguring credentials", () => {
     const tempDir = createTempDir()
     writeConfigFile(tempDir, {
       providers: {
         dashscope: {
           apiKey: "old-key",
           baseUrl: "https://old.example",
+          agentsModels: [],
           enabled: true,
           models: {
             "qwen-plus": {
@@ -567,6 +569,7 @@ describe("auth login validation", () => {
     expect(readConfigFile(tempDir).providers?.dashscope).toEqual({
       apiKey: "new-key",
       baseUrl: "https://dashscope.aliyuncs.com/compatible-mode",
+      agentsModels: [],
       enabled: true,
       models: {
         "qwen-plus": {
@@ -671,6 +674,34 @@ describe("auth login validation", () => {
     })
   })
 
+  test.each(["__default__", "x-goog-api-key"])(
+    "configures Google with %s auth from the CLI",
+    (authType) => {
+      const tempDir = createTempDir()
+      writeConfigFile(tempDir, {})
+      runScript(
+        tempDir,
+        `
+      const consolaModule = await import("consola");
+      const consola = consolaModule.default ?? consolaModule;
+      const answers = ["manual", "google", "google", "https://generativelanguage.googleapis.com/v1beta", "google-key", "${authType}"];
+      consola.prompt = async () => answers.shift();
+      consola.info = () => {};
+      consola.success = () => {};
+      const { runAuthLogin } = await import("./src/auth");
+      await runAuthLogin({ provider: "custom", verbose: false, showToken: false });
+    `,
+      )
+      expect(readConfigFile(tempDir).providers?.google).toEqual({
+        apiKey: "google-key",
+        baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+        enabled: true,
+        type: "google",
+        ...(authType !== "__default__" && { authType }),
+      })
+    },
+  )
+
   test("writes the selected authorization auth type", () => {
     const tempDir = createTempDir()
     writeConfigFile(tempDir, {})
@@ -698,7 +729,7 @@ describe("auth login validation", () => {
     })
   })
 
-  test("preserves custom provider model settings when reconfiguring credentials", () => {
+  test("preserves custom provider model settings and Codex selection when reconfiguring credentials", () => {
     const tempDir = createTempDir()
     writeConfigFile(tempDir, {
       providers: {
@@ -706,6 +737,7 @@ describe("auth login validation", () => {
           apiKey: "old-key",
           authType: "x-api-key",
           baseUrl: "https://old.example",
+          agentsModels: ["qwen-plus"],
           enabled: true,
           models: {
             "qwen-plus": {
@@ -734,6 +766,7 @@ describe("auth login validation", () => {
     expect(readConfigFile(tempDir).providers?.dash).toEqual({
       apiKey: "new-key",
       baseUrl: "https://new.example",
+      agentsModels: ["qwen-plus"],
       enabled: true,
       models: {
         "qwen-plus": {

@@ -5,6 +5,7 @@ import fs from "node:fs"
 import type { TokenUsagePricingConfig } from "~/lib/token-usage/pricing"
 
 import { writeFileAtomically } from "./atomic-file"
+import { isGitHubCopilotAvailable } from "./github-copilot-provider"
 import { PATHS } from "./paths"
 
 export interface AppConfig {
@@ -17,6 +18,7 @@ export interface AppConfig {
   extraPrompts?: Record<string, string>
   smallModels?: SmallModelsConfig
   contextManagement?: ContextManagementConfig
+  opencodeModelContextWindow?: number
   modelResponsesApiCompactThresholds?: Record<string, number>
   modelReasoningEfforts?: Record<
     string,
@@ -36,13 +38,20 @@ export interface AppConfig {
   // via /responses. Leave unset to disable (the tool is then stripped).
   // Mixing web_search with other tools is not supported.
   messageApiWebSearchModel?: string
+  // Top-level image routes stay on the OpenAI/Codex path until these are set
+  // to an xai/model alias. Only the xAI Imagine API is supported.
+  imageGenerationModel?: string
+  imageEditModel?: string
   // Model used for Claude Code background security-monitor requests on
   // /v1/messages and provider message APIs: requests without tools, with
   // `stop_sequences: ["</block>"]` and a system block starting with
   // "You are a security monitor for autonomous AI coding agents.".
   // A `provider/model` alias is forwarded to that provider's message API on
   // the top-level route. Provider message routes use the configured value on
-  // their current provider. Leave empty to disable (default).
+  // their current provider. Defaults to codex-auto-review when Codex is
+  // enabled, otherwise gpt-6-luna when GitHub Copilot is enabled and both its
+  // GitHub and Copilot tokens are loaded. An explicit empty value disables
+  // the override.
   claudeAutoModel?: string
   claudeTokenMultiplier?: number
 }
@@ -116,10 +125,12 @@ export type ProviderAuthType =
   | "llmapi-broker"
   | "oauth2"
   | "x-api-key"
+  | "x-goog-api-key"
 export const SUPPORTED_PROVIDER_TYPES = [
   "anthropic",
   "openai-compatible",
   "openai-responses",
+  "google",
 ] as const
 export type ProviderType = (typeof SUPPORTED_PROVIDER_TYPES)[number]
 export type ProviderTransport = "llmapi" | "standard"
@@ -136,6 +147,7 @@ export interface ProviderConfig {
   accountId?: string
   pricingCurrency?: string
   models?: Record<string, ModelConfig>
+  agentsModels?: Array<string>
 }
 
 const modelResponsesApiCompactThresholds = {
@@ -148,17 +160,23 @@ export const defaultContextManagement = {
   responses: false,
 } satisfies Required<ContextManagementConfig>
 
+export const defaultOpencodeModelContextWindow = 400_000
+
 export const defaultConfig: AppConfig = {
   auth: {
     apiKeys: [],
   },
   providers: {},
-  modelMappings: {},
+  modelMappings: {
+    "codex-auto-review": "codex/codex-auto-review",
+    "gpt-reserve": "codex/gpt-reserve",
+  },
   smallModels: {
     codex: "gpt-6-luna",
     copilot: "gpt-6-luna",
   },
   contextManagement: defaultContextManagement,
+  opencodeModelContextWindow: defaultOpencodeModelContextWindow,
   modelResponsesApiCompactThresholds,
   useMessagesApi: true,
   useResponsesApiWebSocket: true,
@@ -245,7 +263,7 @@ export function readEditableConfigFromDisk(): AppConfig {
     if (!raw.trim()) {
       return {}
     }
-    return JSON.parse(raw) as AppConfig
+    return migrateProviderAgentModels(JSON.parse(raw) as AppConfig).mergedConfig
   } catch (error) {
     if (isNodeError(error) && error.code === "ENOENT") {
       return {}
@@ -258,7 +276,11 @@ export function readEditableConfigFromDisk(): AppConfig {
 }
 
 export function writeConfigToDisk(config: AppConfig): void {
-  writeFileAtomically(PATHS.CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`)
+  const { mergedConfig } = migrateProviderAgentModels(config)
+  writeFileAtomically(
+    PATHS.CONFIG_PATH,
+    `${JSON.stringify(mergedConfig, null, 2)}\n`,
+  )
 }
 
 export function setConfiguredApiKeys(apiKeys: Array<string>): Array<string> {
@@ -279,10 +301,14 @@ export function setConfiguredApiKeys(apiKeys: Array<string>): Array<string> {
   return [...uniqueKeys]
 }
 
-function mergeDefaultConfig(config: AppConfig): {
+function mergeDefaultConfig(inputConfig: AppConfig): {
   mergedConfig: AppConfig
   changed: boolean
 } {
+  const { mergedConfig: config, changed: agentModelsMigrated } =
+    migrateProviderAgentModels(inputConfig)
+  const modelMappings = config.modelMappings ?? {}
+  const defaultModelMappings = defaultConfig.modelMappings ?? {}
   const extraPrompts = config.extraPrompts ?? {}
   const defaultExtraPrompts = defaultConfig.extraPrompts ?? {}
   const responsesApiCompactThresholds =
@@ -294,6 +320,10 @@ function mergeDefaultConfig(config: AppConfig): {
   const contextManagement = normalizeContextManagementConfig(
     config.contextManagement,
   )
+  const opencodeModelContextWindow = positiveIntegerOrDefault(
+    config.opencodeModelContextWindow,
+    defaultOpencodeModelContextWindow,
+  )
   const {
     changed: upstreamTransportMigrated,
     migrated: migratedUpstreamTransport,
@@ -304,6 +334,9 @@ function mergeDefaultConfig(config: AppConfig): {
   )
   const defaultContextManagementConfig = defaultConfig.contextManagement ?? {}
 
+  const missingModelMappings = Object.keys(defaultModelMappings).filter(
+    (model) => !Object.hasOwn(modelMappings, model),
+  )
   const missingExtraPromptModels = Object.keys(defaultExtraPrompts).filter(
     (model) => !Object.hasOwn(extraPrompts, model),
   )
@@ -318,23 +351,29 @@ function mergeDefaultConfig(config: AppConfig): {
     defaultContextManagementConfig,
   ).filter((key) => !Object.hasOwn(contextManagement, key))
 
+  const hasModelMappingChanges = missingModelMappings.length > 0
   const hasExtraPromptChanges = missingExtraPromptModels.length > 0
   const hasReasoningEffortChanges = missingReasoningEffortModels.length > 0
   const hasResponsesApiCompactThresholdChanges =
     missingResponsesApiCompactThresholdModels.length > 0
   const hasContextManagementChanges = missingContextManagementKeys.length > 0
+  const hasOpencodeModelContextWindowChanges =
+    config.opencodeModelContextWindow !== opencodeModelContextWindow
   const hasUpstreamTransportChanges = Object.entries(upstreamTransport).some(
     ([key, value]) =>
       migratedUpstreamTransport[key as keyof UpstreamTransportConfig] !== value,
   )
 
   if (
-    !hasExtraPromptChanges
+    !hasModelMappingChanges
+    && !hasExtraPromptChanges
     && !hasReasoningEffortChanges
     && !hasResponsesApiCompactThresholdChanges
     && !hasContextManagementChanges
+    && !hasOpencodeModelContextWindowChanges
     && !hasUpstreamTransportChanges
     && !upstreamTransportMigrated
+    && !agentModelsMigrated
   ) {
     return { mergedConfig: config, changed: false }
   }
@@ -346,10 +385,22 @@ function mergeDefaultConfig(config: AppConfig): {
   return {
     mergedConfig: {
       ...persistedConfig,
+      modelMappings: {
+        ...defaultModelMappings,
+        ...modelMappings,
+      },
       contextManagement: {
+        ...((
+          config.contextManagement
+          && typeof config.contextManagement === "object"
+          && !Array.isArray(config.contextManagement)
+        ) ?
+          config.contextManagement
+        : {}),
         ...defaultContextManagementConfig,
         ...contextManagement,
       },
+      opencodeModelContextWindow,
       extraPrompts: {
         ...defaultExtraPrompts,
         ...extraPrompts,
@@ -362,10 +413,34 @@ function mergeDefaultConfig(config: AppConfig): {
         ...defaultModelReasoningEfforts,
         ...modelReasoningEfforts,
       },
-      upstreamTransport,
+      upstreamTransport: {
+        ...migratedUpstreamTransport,
+        ...upstreamTransport,
+      },
     },
     changed: true,
   }
+}
+
+function migrateProviderAgentModels(config: AppConfig): {
+  mergedConfig: AppConfig
+  changed: boolean
+} {
+  let migratedProviders: AppConfig["providers"]
+  for (const [name, provider] of Object.entries(config.providers ?? {})) {
+    if (!Object.hasOwn(provider, "codexModels")) continue
+    const { codexModels, ...currentProvider } = provider as ProviderConfig & {
+      codexModels?: Array<string>
+    }
+    migratedProviders ??= { ...config.providers }
+    migratedProviders[name] = { agentsModels: codexModels, ...currentProvider }
+  }
+  return migratedProviders ?
+      {
+        mergedConfig: { ...config, providers: migratedProviders },
+        changed: true,
+      }
+    : { mergedConfig: config, changed: false }
 }
 
 function normalizeContextManagementConfig(
@@ -491,6 +566,11 @@ export function getConfig(): AppConfig {
   return cachedConfig
 }
 
+// Refresh this process on its next read without rewriting defaults to disk.
+export function invalidateConfigCache(): void {
+  cachedConfig = null
+}
+
 export function reloadConfig(): AppConfig {
   return mergeConfigWithDefaults()
 }
@@ -503,6 +583,13 @@ export function isMessagesApiEnabled(): boolean {
 export function isResponsesApiWebSocketEnabled(): boolean {
   const config = getConfig()
   return config.useResponsesApiWebSocket ?? true
+}
+
+export function getOpencodeModelContextWindow(): number {
+  return positiveIntegerOrDefault(
+    getConfig().opencodeModelContextWindow,
+    defaultOpencodeModelContextWindow,
+  )
 }
 
 // Applies to every upstream HTTP transport (Copilot Chat Completions and
@@ -574,10 +661,25 @@ export function getMessageApiWebSearchModel(): string | undefined {
   return model && model.trim().length > 0 ? model : undefined
 }
 
-export function getClaudeAutoModel(): string | undefined {
+export function getClaudeAutoModel(
+  useDefault: boolean = false,
+): string | undefined {
   const config = getConfig()
   const model = config.claudeAutoModel
-  return model && model.trim().length > 0 ? model.trim() : undefined
+  if (model !== undefined) {
+    return model && model.trim().length > 0 ? model.trim() : undefined
+  }
+
+  if (!useDefault) {
+    return undefined
+  }
+
+  const codexProvider = config.providers?.codex
+  if (codexProvider && codexProvider.enabled !== false) {
+    return "codex-auto-review"
+  }
+
+  return isGitHubCopilotAvailable(config) ? "gpt-6-luna" : undefined
 }
 
 export function getClaudeTokenMultiplier(): number {

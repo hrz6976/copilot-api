@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -12,6 +12,7 @@ import {
   readCodexCredentials,
   readGitHubTokenFromEnv,
   removeCodexCredentials,
+  withCredentialFileLock,
   writeCodexCredentials,
   writeGitHubToken,
 } from "~/lib/credential-store"
@@ -69,6 +70,7 @@ async function waitForFiles(filePaths: Array<string>): Promise<void> {
 }
 
 afterEach(() => {
+  mock.restore()
   fs.fsyncSync = originalFsyncSync
   PATHS.GITHUB_TOKEN_PATH = originalGitHubTokenPath
   PATHS.CODEX_CREDENTIAL_PATH = originalCodexCredentialPath
@@ -79,6 +81,90 @@ afterEach(() => {
 })
 
 describe("credential store atomic writes", () => {
+  if (process.platform === "win32") {
+    test.each(["EPERM", "EACCES"])(
+      "waits safely when inspecting a contended Windows lock fails with %s",
+      async (code) => {
+        const { codexCredentialPath } = useTempCredentialPaths()
+        const held = Promise.withResolvers<void>()
+        const release = Promise.withResolvers<void>()
+        const inspected = Promise.withResolvers<void>()
+        const holder = withCredentialFileLock(codexCredentialPath, async () => {
+          held.resolve()
+          await release.promise
+        })
+        await held.promise
+        spyOn(fs.promises, "readFile").mockImplementationOnce(
+          (): Promise<never> => {
+            inspected.resolve()
+            return Promise.reject(
+              Object.assign(new Error("Lock contention"), { code }),
+            )
+          },
+        )
+        const credentials = {
+          accountId: "account-id",
+          accessToken: "access-token",
+          refreshToken: "refresh-token",
+          expiresAt: 123,
+        }
+        const writer = writeCodexCredentials(credentials)
+        try {
+          await inspected.promise
+          expect(fs.existsSync(`${codexCredentialPath}.lock`)).toBe(true)
+        } finally {
+          release.resolve()
+        }
+        await Promise.all([holder, writer])
+        expect(await readCodexCredentials()).toEqual(credentials)
+        expect(fs.existsSync(`${codexCredentialPath}.lock`)).toBe(false)
+      },
+    )
+  }
+
+  test("does not overwrite a newer sign-in with an old refresh result", async () => {
+    useTempCredentialPaths()
+    const fresh = {
+      accountId: "same-account",
+      accessToken: "new-signin-access",
+      refreshToken: "new-signin-refresh",
+      expiresAt: 123,
+    }
+    await writeCodexCredentials(fresh)
+    await writeCodexCredentials(
+      {
+        ...fresh,
+        accessToken: "old-rotated-access",
+        refreshToken: "old-rotated-refresh",
+      },
+      { insertIfMissing: false, expectedRefreshToken: "old-refresh" },
+    )
+    expect(await readCodexCredentials(fresh.accountId)).toEqual(fresh)
+  })
+
+  test("writes a matching refresh and allows retrying the same rotated result", async () => {
+    useTempCredentialPaths()
+    const old = {
+      accountId: "same-account",
+      accessToken: "old-access",
+      refreshToken: "old-refresh",
+      expiresAt: 123,
+    }
+    const rotated = {
+      ...old,
+      accessToken: "rotated-access",
+      refreshToken: "rotated-refresh",
+    }
+    await writeCodexCredentials(old)
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await writeCodexCredentials(rotated, {
+        insertIfMissing: false,
+        expectedRefreshToken: old.refreshToken,
+      })
+      expect(await readCodexCredentials(old.accountId)).toEqual(rotated)
+    }
+  })
+
   test("writes GitHub and Codex credentials with protected permissions", async () => {
     const { githubTokenPath, codexCredentialPath } = useTempCredentialPaths()
     const credentials = {

@@ -8,7 +8,10 @@ import type { SubagentMarker } from "~/lib/subagent"
 import type { Model } from "~/lib/types/models"
 
 import { getStreamErrorMessage } from "~/lib/error"
+import { getRawProviderConfig } from "~/lib/config"
+import { GITHUB_COPILOT_PROVIDER } from "~/lib/github-copilot-provider"
 import { debugJson, debugJsonTail, debugLazy } from "~/lib/logger"
+import { getProviderModelPdfSupport } from "~/lib/model-pdf-support"
 import { writeSSEIfConnected } from "~/lib/sse"
 import { resolveBridgeToolSearchName } from "~/lib/tool-search"
 import {
@@ -60,13 +63,13 @@ import {
 import {
   translateToAnthropic,
   translateToOpenAI,
-} from "./non-stream-translation"
+} from "./completions-translation"
 import { prepareMessagesApiPayload } from "./preprocess"
 import {
   flushPendingAnthropicStreamEvents,
   translateChunkToAnthropicEvents,
   translateErrorToAnthropicErrorEvent,
-} from "./stream-translation"
+} from "./completions-stream-translation"
 
 const COPILOT_CONTEXT_CACHE_SYSTEM_MARKER_LIMIT = 2
 const COPILOT_CONTEXT_CACHE_NON_SYSTEM_MARKER_LIMIT = 1
@@ -134,6 +137,14 @@ export const handleWithChatCompletions = async (
     compactType,
   } = options
   const openAIPayload = translateToOpenAI(anthropicPayload, {
+    supportPdf: getProviderModelPdfSupport(
+      anthropicPayload.model,
+      {
+        ...getRawProviderConfig(GITHUB_COPILOT_PROVIDER),
+        name: GITHUB_COPILOT_PROVIDER,
+      },
+      selectedModel,
+    ),
     validateReasoningEffort: true,
     reasoningEffortSupport:
       selectedModel?.capabilities.supports.reasoning_effort,
@@ -253,10 +264,8 @@ export const handleWithResponsesApi = async (
 ) => {
   const { logger, selectedModel, ...requestOptions } = options
 
-  const responsesPayload = translateAnthropicMessagesToResponsesPayload(
-    anthropicPayload,
-    requestOptions.subagentMarker?.agent_id,
-  )
+  const responsesPayload =
+    translateAnthropicMessagesToResponsesPayload(anthropicPayload)
   const recordUsage = createCopilotUsageRecorder({
     endpoint: options.usageEndpoint ?? "responses",
     fallbackSessionId: requestOptions.sessionId,
@@ -424,6 +433,7 @@ export const handleWithMessagesApi = async (
     anthropicPayload,
     anthropicBetaHeader,
     {
+      anthropicVersionHeader: c.req?.header("anthropic-version"),
       clientSignal: c.req?.raw?.signal,
       subagentMarker,
       requestId,

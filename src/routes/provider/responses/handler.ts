@@ -280,7 +280,11 @@ const shouldFallbackToMessages = (
   modelId: string,
   effectiveType: ProviderType,
 ): boolean => {
-  if (effectiveType === "anthropic" || effectiveType === "openai-compatible") {
+  if (
+    effectiveType === "anthropic"
+    || effectiveType === "openai-compatible"
+    || effectiveType === "google"
+  ) {
     return true
   }
 
@@ -306,6 +310,7 @@ const createProviderResponsesUsageRecorder = (
     pricing: modelConfig?.pricing,
     pricingCurrency,
     providerName: provider,
+    serviceTier: payload.service_tier,
     sessionId: sessionAffinity ?? "",
   })
 }

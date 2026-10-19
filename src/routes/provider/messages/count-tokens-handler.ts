@@ -1,12 +1,17 @@
 import type { Context, Env } from "hono"
 
-import { getEffectiveProviderModelConfig } from "~/lib/config"
+import {
+  getEffectiveProviderModelConfig,
+  resolveEffectiveProviderType,
+} from "~/lib/config"
 import { createHandlerLogger } from "~/lib/logger"
+import { fromClaudeDiscoveryModelId } from "~/lib/claude-models"
+import { getProviderModelPdfSupport } from "~/lib/model-pdf-support"
 import { resolveProviderConfig } from "~/lib/provider-resolver"
 import { createFallbackModel } from "~/lib/provider-model"
 import { getTokenCount } from "~/lib/tokenizer"
 import { type AnthropicMessagesPayload } from "~/lib/types/anthropic"
-import { translateToOpenAI } from "~/routes/messages/non-stream-translation"
+import { translateToOpenAI } from "~/routes/messages/completions-translation"
 import { normalizeSystemMessages } from "~/routes/messages/preprocess"
 
 const logger = createHandlerLogger("provider-count-tokens-handler")
@@ -16,6 +21,7 @@ export async function handleProviderCountTokens(
 ): Promise<Response> {
   const provider = c.req.param("provider")
   const payload = await c.req.json<AnthropicMessagesPayload>()
+  payload.model = fromClaudeDiscoveryModelId(payload.model)
   return await handleProviderCountTokensForProvider(c, { payload, provider })
 }
 
@@ -44,18 +50,15 @@ export async function handleProviderCountTokensForProvider(
   }
 
   const modelConfig = getEffectiveProviderModelConfig(providerConfig, modelId)
-  const translationOptions =
-    (
-      providerConfig.type === "openai-compatible"
-      || providerConfig.type === "openai-responses"
-    ) ?
-      {
-        supportPdf: modelConfig?.supportPdf,
-        toolContentSupportType: modelConfig?.toolContentSupportType ?? [],
-      }
-    : undefined
-
-  const openAIPayload = translateToOpenAI(anthropicPayload, translationOptions)
+  const effectiveType = resolveEffectiveProviderType(providerConfig, modelId)
+  const openAIPayload = translateToOpenAI(anthropicPayload, {
+    supportPdf:
+      modelConfig?.supportPdf
+      ?? getProviderModelPdfSupport(modelId, providerConfig),
+    ...(effectiveType === "openai-compatible" && {
+      toolContentSupportType: modelConfig?.toolContentSupportType ?? [],
+    }),
+  })
 
   const selectedModel = createFallbackModel(modelId)
 

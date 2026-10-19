@@ -14,7 +14,7 @@
   <a href="https://www.npmjs.com/package/@hrz6976/copilot-api"><img src="https://img.shields.io/npm/v/@hrz6976/copilot-api.svg" alt="npm version"></a>
   <a href="https://github.com/caozhiyuan/copilot-api/blob/dev/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
   <a href="https://github.com/caozhiyuan/copilot-api/stargazers"><img src="https://img.shields.io/github/stars/caozhiyuan/copilot-api.svg" alt="GitHub stars"></a>
-  <a href="https://bun.sh"><img src="https://img.shields.io/badge/Bun-%3E%3D1.2.x-orange.svg" alt="Bun >= 1.2.x"></a>
+  <a href="https://bun.sh"><img src="https://img.shields.io/badge/Bun-%3E%3D1.4.0-orange.svg" alt="Bun >= 1.4.0"></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/Node-%3E%3D22.13.0-green.svg" alt="Node >= 22.13.0"></a>
 </p>
 
@@ -22,7 +22,7 @@
   English | <a href="README.zh-CN.md">简体中文</a>
 </p>
 
-Copilot API is a local AI gateway that connects Claude Code, OpenCode, Codex, and other clients to GitHub Copilot, the built-in Codex provider, and third-party model providers through a unified API.
+Copilot API is a local AI gateway that connects Claude Code, OpenCode, Codex, and other clients to GitHub Copilot, the built-in Codex and xAI providers, and third-party model providers through a unified API.
 
 > This is a fork of [caozhiyuan/copilot-api](https://github.com/caozhiyuan/copilot-api) published as [`@hrz6976/copilot-api`](https://www.npmjs.com/package/@hrz6976/copilot-api). It adds CloudGPT and Microsoft LLM API providers, including static model catalogs and automatic per-model protocol routing. Docker images and desktop app binaries are not published for this fork; build them locally if needed.
 
@@ -31,14 +31,14 @@ Copilot API is a local AI gateway that connects Claude Code, OpenCode, Codex, an
 ## Highlights
 
 - **Unified API Gateway**: Serve OpenAI-compatible Chat Completions (`/v1/chat/completions`), the OpenAI Responses API (`/v1/responses`), and Anthropic-compatible Messages (`/v1/messages`) from one local endpoint.
-- **Multi-Provider**: Route GitHub Copilot, the built-in `codex` provider, and third-party providers (Kimi, DeepSeek, DashScope, OpenRouter, OpenCode Go, or a custom provider) behind the same gateway. GitHub Copilot is optional — with at least one enabled provider, the server starts in provider-only mode without a GitHub token.
-- **Coding Agent Ready**: First-class setups for Claude Code, OpenCode, and Codex, including the interactive `--claude-code` launcher and a merged model catalog for Codex.
+- **Multi-Provider**: Route GitHub Copilot, the built-in `codex` and `xai` providers, and third-party providers (Kimi, DeepSeek, DashScope, OpenRouter, OpenCode Go, Google Gemini, or a custom provider from models.dev) behind the same gateway. GitHub Copilot is optional — with at least one enabled provider, the server starts in provider-only mode without a GitHub token.
+- **Coding Agent Ready**: First-class setups for Claude Code, OpenCode, and Codex, including settings.json gateway model discovery and a merged model catalog for Codex.
 - **Streaming & WebSocket**: SSE streaming on all three client-facing protocols. Upstream Copilot Responses traffic selects WebSocket or HTTP from each model's advertised endpoints; streamed Responses traffic for the built-in `codex` provider uses WebSocket by default and uses HTTP when `useResponsesApiWebSocket` is disabled.
-- **Desktop App**: Electron GUI with GitHub Copilot sign-in, Codex OAuth, provider configuration, token usage, logs, and one-click start/stop.
+- **Desktop App**: Electron GUI with GitHub Copilot sign-in, Codex and xAI OAuth, provider configuration, token usage, logs, and one-click start/stop.
 
 ## Quick Start
 
-Requires **Node.js >= 22.13.0** (npx) or **Bun >= 1.2.x**. A Copilot subscription is needed only for the GitHub Copilot provider; other configured providers can run independently.
+Requires **Node.js >= 22.13.0** (npx) or **Bun >= 1.4.0**. A Copilot subscription is needed only for the GitHub Copilot provider; other configured providers can run independently.
 
 ```sh
 npx @hrz6976/copilot-api@latest start
@@ -50,6 +50,18 @@ The server listens on `http://localhost:4141` by default. Optionally authenticat
 npx @hrz6976/copilot-api@latest auth login
 ```
 
+Alternatively, run with Bun >= 1.4.0, which can offer better performance:
+
+```sh
+bunx --bun @hrz6976/copilot-api start
+```
+
+Use `--bun` to select the Bun runtime and omit `@latest` for routine starts to reuse the cache. See [Bun setup](docs/guides/en/getting-started.md#using-with-bun) for global installation and upgrades.
+
+> [!NOTE]
+> To trust system-installed CA certificates (for example, behind a corporate HTTPS proxy), `npx` needs no extra configuration: Node.js >= 22.19.0 merges the system CA store at startup through [`tls.setDefaultCACertificates()`](https://nodejs.org/api/tls.html#tlssetdefaultcacertificatescerts). Only Bun requires `NODE_USE_SYSTEM_CA=1` before `bunx --bun`: `export NODE_USE_SYSTEM_CA=1` in bash/zsh, or `$env:NODE_USE_SYSTEM_CA="1"` in PowerShell (Bun >= 1.4.0).
+> Desktop enables the variable for server subprocesses by default, preserving explicit environment settings.
+
 Verify the gateway is up:
 
 ```sh
@@ -59,11 +71,38 @@ curl http://localhost:4141/v1/models
 > [!NOTE]
 > Token usage storage requires Node.js >= 22.13.0 or Bun. See [Using with npx](docs/guides/en/getting-started.md#using-with-npx) for details.
 
-From here, jump to the guide for your client: [Claude Code](docs/guides/en/claude-code.md#using-with-claude-code), [OpenCode](docs/guides/en/opencode.md#using-with-opencode), [Codex](docs/guides/en/codex.md#using-with-codex), or run it with [Docker](docs/guides/en/docker.md#using-with-docker).
+From here, jump to the guide for your client: [Claude Code](docs/guides/en/claude-code.md#using-with-claude-code), [OpenCode](docs/guides/en/opencode.md#using-with-opencode), [Codex](docs/guides/en/codex.md#using-with-codex), [DeepSeek Harness](docs/guides/en/dsh.md#using-with-deepseek-harness), or run it with [Docker](docs/guides/en/docker.md#using-with-docker).
+
+## CloudGPT Decision API
+
+Configure CloudGPT first using the [provider setup guide](docs/guides/en/fork-providers.md). The gateway uses the configured Azure CLI identity to obtain CloudGPT tokens; clients use the gateway API key.
+
+Send a TypeSafe SystemOne decision request to the provider-scoped endpoint:
+
+```sh
+curl http://localhost:4141/cloudgpt/v1/systemone \
+  -H "Authorization: Bearer YOUR_GATEWAY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Microsoft-Decision-1",
+    "state": "I was charged twice for my subscription.",
+    "questions": {
+      "department": {
+        "type": "choice",
+        "instructions": "Which support team should handle this?",
+        "criteria": {"billing": null, "technical": null}
+      }
+    }
+  }'
+```
+
+Alternatively, call `/v1/systemone` with `"model": "cloudgpt/Microsoft-Decision-1"`. Both routes forward to CloudGPT's `https://cloudgpt-openai.azure-api.net/decision-api/v1/systemone`, using the bare deployment name upstream. Other request fields and the upstream JSON response and status are preserved. The result includes `answers.department.choice`, confidence, probabilities, and token usage.
+
+Use `OCTO-PI` (or `cloudgpt/OCTO-PI` on the shared route) for the shared evaluation-only deployment. These models use the decision contract rather than Chat Completions. For a TypeSafe Python SDK example, see the [CloudGPT guide](docs/guides/en/fork-providers.md).
 
 ## Compatibility
 
-Every client talks to the same local endpoint. The gateway routes each request to GitHub Copilot, the built-in `codex` provider, or a configured third-party provider, translating between protocols when the provider speaks a different one.
+Every client talks to the same local endpoint. The gateway routes each request to GitHub Copilot, the built-in `codex` or `xai` provider, or a configured third-party provider, translating between protocols when the provider speaks a different one.
 
 **Client / Protocol Matrix**
 
@@ -72,6 +111,7 @@ Every client talks to the same local endpoint. The gateway routes each request t
 | Claude Code | — | — | ✅ Native / Adapter | Anthropic Messages |
 | OpenCode | ✅ Native | ✅ Native / Adapter | ✅ Native / Adapter via `@ai-sdk/anthropic` | Anthropic Messages |
 | Codex | — | ✅ Native / Adapter | — | Responses |
+| DeepSeek Harness | — | ✅ via `dsh-copilot-api` | ✅ via `dsh-copilot-api` | Responses |
 | OpenAI-compatible clients | ✅ Native | ✅ Native / Adapter | — | Chat Completions |
 | Anthropic-compatible clients | — | — | ✅ Native / Adapter | Anthropic Messages |
 
@@ -79,7 +119,7 @@ Every client talks to the same local endpoint. The gateway routes each request t
 
 ## Desktop App
 
-Prefer a GUI? The Electron desktop app in `desktop/` covers GitHub Copilot sign-in, OpenAI Codex OAuth, and API-key configuration for Kimi, DeepSeek, DashScope, OpenRouter, or a custom provider — with one-click start/stop of the local server, and the local endpoint, auth header, available models, usage, and logs in one window.
+Prefer a GUI? The Electron desktop app in `desktop/` covers GitHub Copilot sign-in, OpenAI Codex and xAI OAuth, and API-key configuration for Kimi, DeepSeek, DashScope, OpenRouter, or a custom provider from models.dev — with one-click start/stop of the local server, and the local endpoint, auth header, available models, usage, and logs in one window.
 
 <p align="center">
   <img src="docs/screenshots/desktop-dashboard.png" alt="Copilot API desktop app dashboard" width="49%" />
@@ -93,8 +133,9 @@ Build desktop packages locally for this fork. See [Electron Desktop App](docs/gu
 | Guide | Contents |
 | --- | --- |
 | [Installation and Startup](docs/guides/en/getting-started.md) | Prerequisites, project overview, `npx` and source runs, provider-only mode without Copilot, and gateway API key setup |
-| [Claude Code](docs/guides/en/claude-code.md) | The `--claude-code` interactive launcher, `.claude/settings.json` environment variables, opus / sonnet / haiku tier mapping, auto-compact window, and WebSearch behavior |
-| [OpenCode](docs/guides/en/opencode.md) | OpenCode OAuth login, the `@ai-sdk/anthropic` provider in `opencode.json`, `baseURL` conventions, model context limits, and thinking options |
+| [Claude Code](docs/guides/en/claude-code.md) | settings.json, gateway model discovery, model mappings, auto-compact window, and WebSearch behavior |
+| [OpenCode](docs/guides/en/opencode.md) | v2 Responses plugin and automatic model discovery, native compaction, model capabilities and pricing, context limits, and v1 Anthropic SDK setup |
+| [DeepSeek Harness](docs/guides/en/dsh.md) | Install `dsh-copilot-api`, save the gateway API key, and choose Responses or Messages |
 | [Codex](docs/guides/en/codex.md) | A full `config.toml` provider block, `GITHUB_COPILOT_API_KEY` environment variable setup, auto-review model mapping, generating `model_catalog.json`, and the merged model picker catalog with protocol adapters |
 | [Docker](docs/guides/en/docker.md) | Docker Compose quick start, the `/data` persistent mount and its ownership repair, supported environment variables, and host interface binding |
 | [Desktop App](docs/guides/en/desktop.md) | Copilot sign-in, Codex OAuth account switching, API-key providers, one-click start / stop, shared model mappings, advanced settings, and per-platform installers |
@@ -103,6 +144,6 @@ Build desktop packages locally for this fork. See [Electron Desktop App](docs/gu
 | [CLI Reference](docs/guides/en/cli.md) | Command structure, global options, and the full option sets for the `start`, `auth`, and `debug` subcommands with example usage |
 | [Configuration Reference](docs/guides/en/configuration.md) | Every `config.json` field: gateway and admin API keys, provider definitions, model mappings, WebSocket and HTTP transport, timeouts, and context management |
 | [API and Authentication](docs/guides/en/api.md) | Allowed auth headers and CORS rules, OpenAI, Codex backend, and Anthropic endpoints, usage monitoring routes, and admin configuration endpoints |
-| [Troubleshooting](docs/guides/en/troubleshooting.md) | Fixes for Copilot encrypted output failures and missing Claude models |
+| [Troubleshooting](docs/guides/en/troubleshooting.md) | Fixes for Claude models missing from the Copilot model list |
 
 Before using GitHub Copilot, read the [GitHub Copilot Security Notice](NOTICE.md#github-copilot-security-notice).

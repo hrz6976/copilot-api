@@ -20,16 +20,20 @@ const createApp = () => {
 }
 
 describe("zstd request middleware", () => {
-  test("is registered only on Responses API routes", () => {
+  test("is registered on Responses and decision API routes", () => {
     const registeredPaths = server.routes
       .filter((route) => route.handler === zstdDecompressionMiddleware)
       .map((route) => route.path)
 
     expect(registeredPaths).toEqual([
       "/responses/*",
+      "/systemone/*",
       "/v1/responses/*",
+      "/v1/systemone/*",
       "/:provider/v1/responses/*",
+      "/:provider/v1/systemone/*",
       "/:provider/responses/*",
+      "/:provider/systemone/*",
     ])
   })
 
